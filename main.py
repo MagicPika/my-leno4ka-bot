@@ -97,5 +97,6 @@ def запустить_flask():
     app.run(host="0.0.0.0", port=port, debug=False)
 
 
-threading.Thread(target=запуск_flask, daemon=True).start()
+threading.Thread(target=запустить_flask, daemon=True).start()
+
 bot.run(TOKEN)
