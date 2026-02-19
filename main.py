@@ -224,7 +224,7 @@ async def on_reaction_add(reaction, user):
                 await member.send(вердикт[1])
                 print(f"Вердикт отправлен в ЛС {discord_id_str}")
     
-            except Exception as e:
+        except Exception as e:
                 print(f"Ошибка при работе с ролями в реакции: {e}")
 
 
@@ -238,5 +238,6 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 bot.run(TOKEN)
+
 
 
