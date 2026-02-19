@@ -103,7 +103,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
 
-channel = bot.get_channel(FORUM_CHANNEL_ID)
+    channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
         return
@@ -221,4 +221,5 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # Запускаем бота последним
 bot.run(TOKEN)
+
 
