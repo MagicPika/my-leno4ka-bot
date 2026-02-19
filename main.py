@@ -10,21 +10,21 @@ app = Flask(__name__)
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("DISCORD_TOKEN")
-FORUM_CHANNEL_ID = 1458881043653197896     # ← твой ID форумного канала
+FORUM_CHANNEL_ID = 1458881043653197896     # ← реальный ID форумного канала
 SECRET = "2122428Matros"   # ← меняй обязательно
 
 РОЛЬ_НА_ПРОВЕРКЕ = 1473913094697783380     # ← ID роли "На проверке"
 РОЛЬ_ОДОБРЕНО    = 1473913198016069642     # ← ID роли "Одобрен"
 
 РОФЛ_ПОЛУЧЕНО = [
-    "Привеет~ 💕 Леночка увидела твою заявку и уже понесла боссам! Жди вердикта, не скучай ☕️",
+    "Привеет~ 💕 Леночка увидела твою заявку и уже понесла боссам! Жди вердикта, не скучай ☕",
     "Ой, какая сочная заявОчка! Леночка в восторге, сейчас покажу Кириллу/Ивану 😘",
     "Всё-всё, поняла! Заявка ушла наверх. Держи пальчики скрещенными 💋",
     "Твоя заявка принята, котик! Леночка доложила, теперь только ждать~ ✨"
 ]
 
 РОФЛ_ОДОБРЕНО = [
-    "Урааа~ 💕 Твоя заявка одобрена! Заходи скорее, Леночка уже наливает кофе ☕️",
+    "Урааа~ 💕 Твоя заявка одобрена! Заходи скорее, Леночка уже наливает кофе ☕",
     "Боссы сказали ДА! Добро пожаловать, солнышко 😘",
     "Одобрено! Леночка в восторге, ты прошёл~ ❤️"
 ]
@@ -32,7 +32,7 @@ SECRET = "2122428Matros"   # ← меняй обязательно
 РОФЛ_ОТКЛОНЕНО = [
     "Ой-ой… боссы сказали нет 😔 Но не грусти, Леночка всё равно тебя любит 💔",
     "К сожалению, отказ… Но в следующий раз Леночка за тебя лучше замолвит словечко 😉",
-    "Не прошли… Но ты милый, приходи попить чайку с Леночкой ☕️"
+    "Не прошли… Но ты милый, приходи попить чайку с Леночкой ☕"
 ]
 
 РОФЛ_УТОЧНИТЬ = [
@@ -41,6 +41,7 @@ SECRET = "2122428Matros"   # ← меняй обязательно
     "Ой, боссам мало инфы… Напиши подробнее, пожалуйста 💕"
 ]
 
+# Flask — принимает заявки из формы
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
     auth = request.headers.get("Authorization")
@@ -65,6 +66,7 @@ def принимать_заявку():
     return jsonify({"status": "ok"}), 200
 
 
+# Основная обработка заявки
 async def обработать_заявку(discord_id: int, author_name: str, fields: list, mention: str, ic: str):
     print(f"Обрабатываю заявку от {discord_id} ({author_name})")
 
@@ -76,11 +78,11 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         print(f"Не удалось взять аватарку {discord_id}: {e}")
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
 
-    босс = random.choice(["I'm Pikachu(Глав.Рук)"])
+    босс = random.choice(["Кирилл Иванов", "Иван Иванов"])
     рофл_заголовок = random.choice([
         "Ой-ой, свеженькая заявОчка прилетела~ 💅",
         "Минутку, котик, Леночка уже несёт боссам! 😏",
-        "Заявочка от красавчика! Сейчас покажу Кириллу/Ивану ☕️",
+        "Заявочка от красавчика! Сейчас покажу Кириллу/Ивану ☕",
         "Ух ты, кто-то решил вступить! Леночка в деле ✨"
     ])
 
@@ -138,6 +140,18 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         print(f"Успешно написали в ЛС {discord_id}")
     except Exception as e:
         print(f"Не получилось написать в ЛС {discord_id}: {e}")
+
+
+# === СОБЫТИЯ И КОМАНДЫ ===
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f"Леночка полностью готова → {bot.user}")
 
 
 @bot.event
@@ -199,28 +213,12 @@ async def on_reaction_add(reaction, user):
 
 
 # === Запуск ===
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f"Леночка полностью готова → {bot.user}")
-
-
 def run_flask():
     port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
     print("Flask запущен")
 
 
-# Запускаем Flask в фоне
 threading.Thread(target=run_flask, daemon=True).start()
 
-# Запускаем бота последним
 bot.run(TOKEN)
-
-
-
