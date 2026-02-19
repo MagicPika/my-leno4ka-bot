@@ -200,32 +200,32 @@ async def on_reaction_add(reaction, user):
         return
 
     try:
-    guild = bot.get_guild(msg.guild.id)
-    if guild is None:
-        print("Guild не найден в реакции")
-    else:
-        member = await guild.fetch_member(int(discord_id_str))
-        if member is None:
-            print(f"Пользователь {discord_id_str} не найден при реакции")
+        guild = bot.get_guild(msg.guild.id)
+        if guild is None:
+            print("Guild не найден в реакции")
         else:
-            # Снимаем "На проверке"
-            роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-            if роль_проверка and роль_проверка in member.roles:
-                await member.remove_roles(роль_проверка, reason=f"Заявка {вердикт[0]}")
-                print(f"Снята роль проверки у {discord_id_str}")
-
-            # Выдача при одобрении
-            if emoji == "✅":
-                роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
-                if роль_одобрено:
-                    await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-                    print(f"Выдана роль одобрено {discord_id_str}")
-
-            await member.send(вердикт[1])
-            print(f"Вердикт отправлен в ЛС {discord_id_str}")
-
-except Exception as e:
-    print(f"Ошибка при работе с ролями в реакции: {e}")
+            member = await guild.fetch_member(int(discord_id_str))
+            if member is None:
+                print(f"Пользователь {discord_id_str} не найден при реакции")
+            else:
+                # Снимаем "На проверке"
+                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+                if роль_проверка and роль_проверка in member.roles:
+                    await member.remove_roles(роль_проверка, reason=f"Заявка {вердикт[0]}")
+                    print(f"Снята роль проверки у {discord_id_str}")
+    
+                # Выдача при одобрении
+                if emoji == "✅":
+                    роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
+                    if роль_одобрено:
+                        await member.add_roles(роль_одобрено, reason="Заявка одобрена")
+                        print(f"Выдана роль одобрено {discord_id_str}")
+    
+                await member.send(вердикт[1])
+                print(f"Вердикт отправлен в ЛС {discord_id_str}")
+    
+            except Exception as e:
+                print(f"Ошибка при работе с ролями в реакции: {e}")
 
 
 # === Запуск ===
@@ -238,4 +238,5 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 bot.run(TOKEN)
+
 
