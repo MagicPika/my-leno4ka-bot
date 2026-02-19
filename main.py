@@ -8,14 +8,15 @@ import random
 
 app = Flask(__name__)
 
-# === НАСТРОЙКИ ===
+# === НАСТРОЙКИ (меняй здесь всё, что нужно) ===
 TOKEN = os.getenv("DISCORD_TOKEN")
-FORUM_CHANNEL_ID = 1458881043653197896     # ID форумного канала
-SECRET = "2122428Matros"   # меняй на свой длинный
+FORUM_CHANNEL_ID = 1458881043653197896     # ← реальный ID форумного канала
+SECRET = "2122428Matros"  # ← свой секретный ключ
 
-РОЛЬ_НА_ПРОВЕРКЕ = 1473913094697783380     # ID роли "На проверке"
-РОЛЬ_ОДОБРЕНО    = 1473913198016069642     # ID роли "Одобрен" / "Участник"
+РОЛЬ_НА_ПРОВЕРКЕ = 1473913094697783380     # ← ID роли "На проверке"
+РОЛЬ_ОДОБРЕНО    = 1473913198016069642     # ← ID роли "Одобрен" или "Участник"
 
+# Рофл-фразы в ЛС при получении заявки
 РОФЛ_ПОЛУЧЕНО = [
     "Привеет~ 💕 Леночка увидела твою заявку и уже понесла боссам! Жди вердикта, не скучай ☕",
     "Ой, какая сочная заявОчка! Леночка в восторге, сейчас покажу Кириллу/Ивану 😘",
@@ -23,6 +24,7 @@ SECRET = "2122428Matros"   # меняй на свой длинный
     "Твоя заявка принята, котик! Леночка доложила, теперь только ждать~ ✨"
 ]
 
+# Рофл при реакции
 РОФЛ_ОДОБРЕНО = [
     "Урааа~ 💕 Твоя заявка одобрена! Заходи скорее, Леночка уже наливает кофе ☕",
     "Боссы сказали ДА! Добро пожаловать, солнышко 😘",
@@ -41,9 +43,11 @@ SECRET = "2122428Matros"   # меняй на свой длинный
     "Ой, боссам мало инфы… Напиши подробнее, пожалуйста 💕"
 ]
 
+# Flask — принимает заявки из формы
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
-    if request.headers.get("Authorization") != f"Bearer {SECRET}":
+    auth = request.headers.get("Authorization")
+    if auth != f"Bearer {SECRET}":
         return jsonify({"error": "Неверный ключ"}), 401
 
     data = request.json or {}
@@ -53,18 +57,21 @@ def принимать_заявку():
     mention = data.get("mention", "Не указан")
     ic = data.get("ic", "Не указан")
 
-    if not discord_id or not discord_id.isdigit():
+    if not discord_id or not str(discord_id).isdigit():
         return jsonify({"error": "Нет нормального discordId"}), 400
 
     bot.loop.create_task(обработать_заявку(int(discord_id), author_name, fields, mention, ic))
     return jsonify({"status": "ok"}), 200
 
 
+# Основная функция обработки заявки
 async def обработать_заявку(discord_id: int, author_name: str, fields: list, mention: str, ic: str):
+    # Аватарка
     try:
         user = await bot.fetch_user(discord_id)
         avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    except:
+    except Exception as e:
+        print(f"Не удалось взять аватарку {discord_id}: {e}")
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
 
     босс = random.choice(["Кирилл Иванов", "Иван Иванов"])
@@ -82,41 +89,48 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         timestamp=discord.utils.utcnow()
     )
     embed.set_author(name="Кадровый отдел", icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png")
-    embed.add_field(name="Discord ID", value=str(discord_id), inline=False)  # для поиска при реакции
+    embed.add_field(name="Discord ID", value=str(discord_id), inline=False)
     embed.set_footer(text=f"Ивановы • Доложила {босс}", icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png")
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
 
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel and channel.type == discord.ChannelType.forum:
+    channel = bot.get_channel(FORUM_CHANNEL_ID)
+    if not channel or channel.type != discord.ChannelType.forum:
+        print("Форумный канал не найден или не форум!")
+        return
+
+    try:
         thread, msg = await channel.create_thread(
             name=f"Заявка — {author_name}",
             embed=embed,
             auto_archive_duration=10080  # 7 дней
         )
-    else:
-        msg = await channel.send(embed=embed)
+    except Exception as e:
+        print(f"Ошибка создания треда: {e}")
+        return
 
     await msg.add_reaction("✅")
     await msg.add_reaction("❌")
     await msg.add_reaction("📞")
 
-    # Выдаём роль "На проверке" сразу
+    # Роль "На проверке"
     try:
         роль_проверка = thread.guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
         if роль_проверка:
             await user.add_roles(роль_проверка, reason="Новая заявка — на проверке")
-    except:
-        pass
+    except Exception as e:
+        print(f"Ошибка выдачи роли 'На проверке': {e}")
 
-    # Пишем в ЛС заявителю
+    # Сообщение в ЛС заявителю
     try:
         await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-    except:
-        pass
+        print(f"Успешно написали в ЛС {discord_id}")
+    except Exception as e:
+        print(f"Не получилось написать в ЛС {discord_id}: {e}")
 
 
+# Реакции модерации
 @bot.event
 async def on_reaction_add(reaction, user):
     if user.bot:
@@ -142,7 +156,7 @@ async def on_reaction_add(reaction, user):
 
     await msg.reply(f"{user.display_name} решил: {emoji} → заявка {вердикт[0]}")
 
-    # Ищем discord_id из поля в embed
+    # Ищем ID автора
     discord_id_str = None
     for field in embeds[0].fields:
         if field.name == "Discord ID":
@@ -150,6 +164,7 @@ async def on_reaction_add(reaction, user):
             break
 
     if not discord_id_str or not discord_id_str.isdigit():
+        print("Не нашли Discord ID в embed")
         return
 
     try:
@@ -162,35 +177,34 @@ async def on_reaction_add(reaction, user):
         if роль_проверка and роль_проверка in member.roles:
             await member.remove_roles(роль_проверка, reason=f"Заявка {вердикт[0]}")
 
-        # При одобрении выдаём основную роль
+        # При одобрении — основная роль
         if emoji == "✅":
             роль_одобрено = msg.guild.get_role(РОЛЬ_ОДОБРЕНО)
             if роль_одобрено:
                 await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-                await member.send(вердикт[1])
 
-        # В любом случае пишем в ЛС вердикт
+        # В ЛС — вердикт
         await member.send(вердикт[1])
+        print(f"Успешно отправили вердикт в ЛС {discord_id_str}")
 
     except Exception as e:
-        print(f"Ошибка при работе с ролями: {e}")
+        print(f"Ошибка при обработке реакции: {e}")
 
 
+# === Запуск ===
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
 
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print("Леночка полностью готова")
-
+    print(f"Леночка полностью готова → {bot.user}")
 
 def run_flask():
     port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
-
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
