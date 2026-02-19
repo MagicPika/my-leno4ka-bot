@@ -1,3 +1,4 @@
+# main.py
 import discord
 from discord.ext import commands
 import os
@@ -9,11 +10,11 @@ app = Flask(name)
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("DISCORD_TOKEN")
-FORUM_CHANNEL_ID = 123456789012345678     # ← твой ID форумного канала
-SECRET = "твой_секретный_ключ_из_формы"   # ← меняй обязательно
+FORUM_CHANNEL_ID = 1458881043653197896     # ← твой ID форумного канала
+SECRET = "2122428Matros"   # ← меняй обязательно
 
-РОЛЬ_НА_ПРОВЕРКЕ = 111111111111111111     # ← ID роли "На проверке"
-РОЛЬ_ОДОБРЕНО    = 222222222222222222     # ← ID роли "Одобрен"
+РОЛЬ_НА_ПРОВЕРКЕ = 1473913094697783380     # ← ID роли "На проверке"
+РОЛЬ_ОДОБРЕНО    = 1473913198016069642     # ← ID роли "Одобрен"
 
 РОФЛ_ПОЛУЧЕНО = [
     "Привеет~ 💕 Леночка увидела твою заявку и уже понесла боссам! Жди вердикта, не скучай ☕️",
@@ -75,7 +76,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         print(f"Не удалось взять аватарку {discord_id}: {e}")
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
 
-    босс = random.choice(["Кирилл Иванов", "Иван Иванов"])
+    босс = random.choice(["I'm Pikachu(Глав.Рук)"])
     рофл_заголовок = random.choice([
         "Ой-ой, свеженькая заявОчка прилетела~ 💅",
         "Минутку, котик, Леночка уже несёт боссам! 😏",
@@ -220,3 +221,4 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # Запускаем бота последним
 bot.run(TOKEN)
+
