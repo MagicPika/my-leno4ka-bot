@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify
 import threading
 import random
 
-app = Flask(name)
+app = Flask(__name__)
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -221,5 +221,6 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # Запускаем бота последним
 bot.run(TOKEN)
+
 
 
