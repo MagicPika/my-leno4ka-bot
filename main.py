@@ -90,21 +90,21 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         "Ух ты, кто-то решил вступить! Леночка в деле ✨"
     ])
 
-  embed = discord.Embed(
+      embed = discord.Embed(
         title=рофл_заголовок,
         description=f"{mention} {ic}",
         color=13369344,
         timestamp=discord.utils.utcnow()
     )
-    embed.set_author(
-        name="Кадровый отдел",
-        icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
-    )
-    embed.add_field(name="Discord ID", value=str(discord_id), inline=False)
-    embed.set_footer(
-        text=f"Ивановы • Доложила {босс}",
-        icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
-    )
+        embed.set_author(
+            name="Кадровый отдел",
+            icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
+        )
+        embed.add_field(name="Discord ID", value=str(discord_id), inline=False)
+        embed.set_footer(
+            text=f"Ивановы • Доложила {босс}",
+            icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
+        )
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
@@ -252,6 +252,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
