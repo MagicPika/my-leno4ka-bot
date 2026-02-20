@@ -126,7 +126,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     await msg.add_reaction("📞")
 
     # Выдаём роль "На проверке" сразу после создания треда
-try:
+    try:
     guild = bot.get_guild(thread.guild.id)
     if guild is None:
         print("Не удалось получить guild по ID из треда")
@@ -250,6 +250,7 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 bot.run(TOKEN)
+
 
 
 
