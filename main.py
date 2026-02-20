@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 import threading
 import random
 import sys
+import asyncio
 
 app = Flask(__name__)
 
@@ -175,7 +176,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
                 return
 
         # Финальный пиздец через 72 часа
-        await thread.send("Всё, Леночка уходит нахуй. Боссы — ленивые долбоёбы, заявка закрыта навсегда 🖕")
+        await thread.send(f"<@924956705756971028> <@695943956856307744> "Всё, Леночка уходит нахуй. Боссы — ленивые долбоёбы, заявка закрыта навсегда 🖕")
         await thread.edit(archived=True, locked=True)
         print("Тред заархивирован за бездействие боссов")
 
@@ -278,5 +279,6 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
