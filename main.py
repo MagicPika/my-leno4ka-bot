@@ -165,67 +165,79 @@ async def on_ready():
 
 
 @bot.event
-async def on_reaction_add(reaction, user):
-    if user.bot:
+async def on_raw_reaction_add(payload):
+    if payload.user_id == bot.user.id:
         return
 
-    msg = reaction.message
-    if msg.author != bot.user:
+    emoji = str(payload.emoji)
+    if emoji not in ["✅", "❌", "❓"]:
         return
 
-    embeds = msg.embeds
-    if not embeds or "заявОчка" not in embeds[0].title.lower():
+    guild = bot.get_guild(payload.guild_id)
+    if guild is None:
         return
 
-    emoji = str(reaction.emoji)
-    if emoji not in ["✅", "❌", "📞"]:
-        return
-
-    вердикт = {
-        "✅": ("одобрена", random.choice(РОФЛ_ОДОБРЕНО)),
-        "❌": ("отклонена", random.choice(РОФЛ_ОТКЛОНЕНО)),
-        "📞": ("нужно уточнить", random.choice(РОФЛ_УТОЧНИТЬ))
-    }[emoji]
-
-    await msg.reply(f"{user.display_name} решил: {emoji} → заявка {вердикт[0]}")
-
-    discord_id_str = None
-    for field in embeds[0].fields:
-        if field.name == "Discord ID":
-            discord_id_str = field.value
-            break
-
-    if not discord_id_str or not discord_id_str.isdigit():
-        print("Не нашли Discord ID в embed")
+    channel = bot.get_channel(payload.channel_id)
+    if channel is None:
         return
 
     try:
-        guild = bot.get_guild(msg.guild.id)
-        if guild is None:
-            print("Guild не найден в реакции")
-        else:
-            member = await guild.fetch_member(int(discord_id_str))
-            if member is None:
-                print(f"Пользователь {discord_id_str} не найден при реакции")
-            else:
-                # Снимаем "На проверке"
-                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-                if роль_проверка and роль_проверка in member.roles:
-                    await member.remove_roles(роль_проверка, reason=f"Заявка {вердикт[0]}")
-                    print(f"Снята роль проверки у {discord_id_str}")
-    
-                # Выдача при одобрении
-                if emoji == "✅":
-                    роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
-                    if роль_одобрено:
-                        await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-                        print(f"Выдана роль одобрено {discord_id_str}")
-    
-                await member.send(вердикт[1])
-                print(f"Вердикт отправлен в ЛС {discord_id_str}")
-    
-        except Exception as e:
-                print(f"Ошибка при работе с ролями в реакции: {e}")
+        message = await channel.fetch_message(payload.message_id)
+    except:
+        return
+
+    if not message.embeds:
+        return
+
+    embed = message.embeds[0]
+
+    # ВАЖНО: если ID хранится в footer как "ID:123456"
+    if not embed.footer or "ID:" not in embed.footer.text:
+        return
+
+    discord_id = int(embed.footer.text.replace("ID:", "").strip())
+
+    try:
+        member = await guild.fetch_member(discord_id)
+    except:
+        return
+
+    # Снимаем роль "На проверке"
+    role_check = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+    if role_check and role_check in member.roles:
+        await member.remove_roles(role_check, reason="Заявка обработана")
+
+    # ==========================
+    # ✅ ОДОБРЕНО
+    # ==========================
+    if emoji == "✅":
+        role_approved = guild.get_role(РОЛЬ_ОДОБРЕНО)
+        if role_approved and role_approved not in member.roles:
+            await member.add_roles(role_approved, reason="Заявка одобрена")
+
+        try:
+            await member.send(random.choice(РОФЛ_ОДОБРЕНО))
+        except:
+            pass  # если ЛС закрыты — не падаем
+
+    # ==========================
+    # ❌ ОТКЛОНЕНО
+    # ==========================
+    if emoji == "❌":
+        try:
+            await member.send(random.choice(РОФЛ_ОТКЛОНЕНО))
+        except:
+            pass
+
+    # ==========================
+    # ❓ УТОЧНИТЬ
+    # ==========================
+    if emoji == "❓":
+        try:
+            await member.send(random.choice(РОФЛ_УТОЧНИТЬ))
+        except:
+            pass
+
 
 
 # === Запуск ===
@@ -238,6 +250,7 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 bot.run(TOKEN)
+
 
 
 
