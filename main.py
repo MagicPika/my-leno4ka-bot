@@ -106,6 +106,14 @@ async def обработать_заявку(discord_id: int, author_name: str, f
             auto_archive_duration=10080
         )
         print(f"Тред создан: {thread.name}")
+
+        пинг = "<@924956705756971028> <@&1457319043672576008>"
+        await thread.send(
+            f"{пинг}\n"
+            f"Привет, боссы! ✨\n"
+            f"Леночка принесла свеженькую заявку от {author_name} 💌\n"
+            f"Скорее смотрите, решайте, одобряйте~ Я уже волнуюсь за неё 😳☕"
+        )
         sys.stdout.flush()
     except Exception as e:
         print(f"Ошибка создания треда: {e}")
@@ -280,6 +288,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
