@@ -135,7 +135,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     except Exception as e:
         print(f"Не получилось написать в ЛС {discord_id}: {e}")
         sys.stdout.flush()
-async def ебанутый_таймер_истерики():
+    async def ебанутый_таймер_истерики():
         await asyncio.sleep(30)  # 24 часа = первые сутки тишины
 
         уровни_ебанутости = [
@@ -155,7 +155,7 @@ async def ебанутый_таймер_истерики():
         ]
 
         for уровень, фразы in уровни_ебанутости:
-            await asyncio.sleep(6 * 3600)  # каждые 6 часов новый уровень ада
+            await asyncio.sleep(6)  # каждые 6 часов новый уровень ада
 
             try:
                 свежий_msg = await thread.fetch_message(msg.id)
@@ -278,4 +278,5 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
