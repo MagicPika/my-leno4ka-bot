@@ -92,6 +92,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     embed.set_footer(
     text=f"Ивановы • Доложила {босс} Поставь ✅ ❌ 📞",
     icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
+    )
     channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
@@ -279,6 +280,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
