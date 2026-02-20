@@ -5,7 +5,6 @@ import os
 from flask import Flask, request, jsonify
 import threading
 import random
-import sys
 
 app = Flask(__name__)
 
@@ -37,13 +36,12 @@ SECRET = "2122428Matros"
     "пиши"
 ]
 
-# Flask — принимает заявки из формы
+# Flask — принимает заявки
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
     auth = request.headers.get("Authorization")
     if auth != f"Bearer {SECRET}":
         print("Неверный ключ")
-        sys.stdout.flush()
         return jsonify({"error": "Неверный ключ"}), 401
 
     data = request.json or {}
@@ -52,11 +50,9 @@ def принимать_заявку():
     fields = data.get("fields", [])
 
     print(f"Получена заявка: discordId={discord_id}, имя={author_name}")
-    sys.stdout.flush()
 
     if not discord_id or not str(discord_id).isdigit():
         print("Нет нормального discordId")
-        sys.stdout.flush()
         return jsonify({"error": "Нет нормального discordId"}), 400
 
     bot.loop.create_task(обработать_заявку(int(discord_id), author_name, fields))
@@ -65,7 +61,6 @@ def принимать_заявку():
 
 async def обработать_заявку(discord_id: int, author_name: str, fields: list):
     print(f"Обрабатываю заявку от {discord_id} ({author_name})")
-    sys.stdout.flush()
 
     try:
         user = await bot.fetch_user(discord_id)
@@ -74,7 +69,6 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     except Exception as e:
         print(f"Не удалось взять аватарку {discord_id}: {e}")
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
-    sys.stdout.flush()
 
     embed = discord.Embed(
         title="Заявка от " + author_name,
@@ -91,7 +85,6 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
-        sys.stdout.flush()
         return
 
     try:
@@ -101,10 +94,8 @@ async def обработать_заявку(discord_id: int, author_name: str, f
             auto_archive_duration=10080
         )
         print(f"Тред создан: {thread.name}")
-        sys.stdout.flush()
     except Exception as e:
         print(f"Ошибка создания треда: {e}")
-        sys.stdout.flush()
         return
 
     await msg.add_reaction("✅")
@@ -121,28 +112,15 @@ async def обработать_заявку(discord_id: int, author_name: str, f
                 if роль_проверка:
                     await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
                     print(f"Роль 'На проверке' выдана {discord_id}")
-                    sys.stdout.flush()
-                else:
-                    print("Роль 'На проверке' не найдена")
-                    sys.stdout.flush()
-            else:
-                print(f"Member не найден для {discord_id}")
-                sys.stdout.flush()
-        else:
-            print("Guild не найден")
-            sys.stdout.flush()
     except Exception as e:
-        print(f"Ошибка выдачи роли: {e}")
-        sys.stdout.flush()
+        print(f"Ошибка выдачи роли 'На проверке': {e}")
 
     # ЛС заявителю
     try:
         await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
         print(f"Успешно написали в ЛС {discord_id}")
-        sys.stdout.flush()
     except Exception as e:
         print(f"Не получилось написать в ЛС {discord_id}: {e}")
-        sys.stdout.flush()
 
 
 # === Запуск ===
@@ -155,10 +133,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"Леночка полностью готова → {bot.user}")
-    sys.stdout.flush()
 
 
-@bot.event
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -179,8 +155,7 @@ async def on_raw_reaction_add(payload):
 
     try:
         message = await channel.fetch_message(payload.message_id)
-    except Exception as e:
-        print(f"Не удалось взять сообщение: {e}")
+    except:
         return
 
     if not message.embeds:
@@ -204,13 +179,11 @@ async def on_raw_reaction_add(payload):
             print(f"Member не найден для {discord_id_str}")
             return
 
-        # Снимаем "На проверке" в любом случае
         роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
         if роль_проверка and роль_проверка in member.roles:
             await member.remove_roles(роль_проверка, reason="Заявка обработана")
             print(f"Снята роль проверки у {discord_id_str}")
 
-        # Выдача роли при одобрении
         if emoji == "✅":
             роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
             if роль_одобрено:
@@ -224,23 +197,21 @@ async def on_raw_reaction_add(payload):
             "📞": random.choice(РОФЛ_УТОЧНИТЬ)
         }[emoji]
 
-        # Пишем в канал
         await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
 
-        # Отправляем в ЛС
         await member.send(вердикт_текст)
         print(f"Вердикт отправлен в ЛС: {вердикт_текст[:30]}...")
 
     except Exception as e:
         print(f"Ошибка реакции: {e}")
-    sys.stdout.flush()
+
+
+# === Запуск ===
+def run_flask():
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
+    print("Flask запущен")
 
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
-
-
-
-
-
-
