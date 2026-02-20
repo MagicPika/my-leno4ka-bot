@@ -32,6 +32,11 @@ SECRET = "2122428Matros"
     "Уебись тапком блять"
 ]
 
+РОФЛ_УТОЧНИТЬ = [
+    "Пеер",
+    "пиши"
+]
+
 # Flask — принимает заявки из формы
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
@@ -209,15 +214,21 @@ async def on_raw_reaction_add(payload):
                 print(f"Выдана роль одобрено {discord_id_str}")
                 
 
-        await member.send(random.choice({
-            "✅": РОФЛ_ОДОБРЕНО,
-            "❌": РОФЛ_ОТКЛОНЕНО,
-            "📞": РОФЛ_УТОЧНИТЬ
-        }[emoji]))
-        print(f"Вердикт отправлен в ЛС {discord_id_str}")
+вердикт_текст = {
+        "✅": random.choice(РОФЛ_ОДОБРЕНО),
+        "❌": random.choice(РОФЛ_ОТКЛОНЕНО),
+        "📞": random.choice(РОФЛ_УТОЧНИТЬ)
+    }[emoji]
 
+    # Пишем в канал
+    await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
+
+    # Отправляем в ЛС заявителю
+    try:
+        await member.send(вердикт_текст)
+        print(f"Рофл-вердикт отправлен в ЛС: {вердикт_текст[:30]}...")
     except Exception as e:
-        print(f"Ошибка реакции: {e}")
+        print(f"Не получилось отправить вердикт в ЛС: {e}")
         sys.stdout.flush()
 
 
@@ -231,4 +242,5 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
