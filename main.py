@@ -127,22 +127,22 @@ async def обработать_заявку(discord_id: int, author_name: str, f
 
     # Выдаём роль "На проверке" сразу после создания треда
     try:
-    guild = bot.get_guild(thread.guild.id)
-    if guild is None:
-        print("Не удалось получить guild по ID из треда")
-    else:
-        member = await guild.fetch_member(discord_id)
-        if member is None:
-            print(f"Пользователь {discord_id} не найден на сервере")
+        guild = bot.get_guild(thread.guild.id)
+        if guild is None:
+            print("Не удалось получить guild по ID из треда")
         else:
-            роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-            if роль_проверка:
-                await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
-                print(f"Роль 'На проверке' выдана {discord_id}")
+            member = await guild.fetch_member(discord_id)
+            if member is None:
+                print(f"Пользователь {discord_id} не найден на сервере")
             else:
-                print("Роль 'На проверке' не найдена на сервере")
-except Exception as e:
-    print(f"Ошибка при выдаче роли 'На проверке': {e}")
+                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+                if роль_проверка:
+                    await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
+                    print(f"Роль 'На проверке' выдана {discord_id}")
+                else:
+                    print("Роль 'На проверке' не найдена на сервере")
+    except Exception as e:
+        print(f"Ошибка при выдаче роли 'На проверке': {e}")
 
     # ЛС заявителю
     try:
@@ -250,6 +250,7 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 bot.run(TOKEN)
+
 
 
 
