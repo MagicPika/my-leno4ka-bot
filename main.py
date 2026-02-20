@@ -82,7 +82,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         title="Заявка от " + author_name,
         description="Ожидает решения боссов",
         color=13369344,
-        footer = Поставь ✅ ❌ 📞
+        footer = "Поставь ✅ ❌ 📞"
         timestamp=discord.utils.utcnow()
     )
     embed.set_thumbnail(url=avatar_url)
@@ -278,6 +278,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
