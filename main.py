@@ -108,11 +108,12 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         print(f"Тред создан: {thread.name}")
         пинг = "<@924956705756971028> <@&1457319043672576008>"
         try:
-        await thread.send(пинг + " новая заявка! Леночка уже в ожидании вашего решения~ 📩💕")
-        print("Пинг боссов успешно отправлен в тред")
+            await thread.send(пинг + " новая заявка! Леночка уже в ожидании вашего решения~ 📩💕")
+            print("Пинг боссов успешно отправлен в тред")
+            sys.stdout.flush()
         except Exception as e:
-        print(f"Ошибка отправки пинга: {e}")
-        sys.stdout.flush()
+            print(f"Ошибка отправки пинга: {e}")
+            sys.stdout.flush()
     except Exception as e:
         print(f"Ошибка создания треда: {e}")
         sys.stdout.flush()
@@ -286,6 +287,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
