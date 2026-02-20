@@ -107,7 +107,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         )
         print(f"Тред создан: {thread.name}")
 
-        пинг = "<@924956705756971028> <@&1457319043672576008>"
+        пинг = "<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
         await thread.send(
             f"{пинг}\n"
             f"Привет, боссы! ✨\n"
@@ -288,6 +288,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
