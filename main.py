@@ -15,30 +15,16 @@ FORUM_CHANNEL_ID = 1458881043653197896
 SECRET = "2122428Matros"
 
 РОЛЬ_НА_ПРОВЕРКЕ = 1473913094697783380
-РОЛЬ_ОДОБРЕНО    = 1473913198016069642
+РОЛЬ_ОДОБРЕНО = 1473913198016069642
+
 РОФЛ_ПОЛУЧЕНО = [
     "Привеет~ 💕 Леночка увидела твою заявку и уже понесла боссам! Жди вердикта, не скучай ☕",
-    "Ой, какая сочная заявОчка! Леночка в восторге, сейчас покажу Кириллу/Ивану 😘",
-    "Всё-всё, поняла! Заявка ушла наверх. Держи пальчики скрещенными 💋",
-    "Твоя заявка принята, котик! Леночка доложила, теперь только ждать~ ✨"
+    "Ой, какая сочная заявОчка! Леночка в восторге, сейчас покажу Кириллу/Ивану 😘"
 ]
 
 РОФЛ_ОДОБРЕНО = [
     "Урааа~ 💕 Твоя заявка одобрена! Заходи скорее, Леночка уже наливает кофе ☕",
-    "Боссы сказали ДА! Добро пожаловать, солнышко 😘",
-    "Одобрено! Леночка в восторге, ты прошёл~ ❤️"
-]
-
-РОФЛ_ОТКЛОНЕНО = [
-    "Ой-ой… боссы сказали нет 😔 Но не грусти, Леночка всё равно тебя любит 💔",
-    "К сожалению, отказ… Но в следующий раз Леночка за тебя лучше замолвит словечко 😉",
-    "Не прошли… Но ты милый, приходи попить чайку с Леночкой ☕"
-]
-
-РОФЛ_УТОЧНИТЬ = [
-    "Боссы хотят уточнить детали! Напиши в канал или в ЛС Леночке 📞",
-    "📞 Звоночек! Нужно кое-что уточнить, ждём тебя~",
-    "Ой, боссам мало инфы… Напиши подробнее, пожалуйста 💕"
+    "Боссы сказали ДА! Добро пожаловать, солнышко 😘"
 ]
 
 # Flask — принимает заявки из формы
@@ -46,7 +32,7 @@ SECRET = "2122428Matros"
 def принимать_заявку():
     auth = request.headers.get("Authorization")
     if auth != f"Bearer {SECRET}":
-        print("Неверный ключ авторизации")
+        print("Неверный ключ")
         sys.stdout.flush()
         return jsonify({"error": "Неверный ключ"}), 401
 
@@ -54,8 +40,6 @@ def принимать_заявку():
     discord_id = data.get("discordId")
     author_name = data.get("authorName", "Без имени")
     fields = data.get("fields", [])
-    mention = data.get("mention", "Не указан")
-    ic = data.get("ic", "Не указан")
 
     print(f"Получена заявка: discordId={discord_id}, имя={author_name}")
     sys.stdout.flush()
@@ -65,12 +49,12 @@ def принимать_заявку():
         sys.stdout.flush()
         return jsonify({"error": "Нет нормального discordId"}), 400
 
-    bot.loop.create_task(обработать_заявку(int(discord_id), author_name, fields, mention, ic))
+    bot.loop.create_task(обработать_заявку(int(discord_id), author_name, fields))
     return jsonify({"status": "ok"}), 200
 
 
-async def обработать_заявку(discord_id: int, author_name: str, fields: list, mention: str, ic: str):
-    print(f"Начало обработки заявки {discord_id}")
+async def обработать_заявку(discord_id: int, author_name: str, fields: list):
+    print(f"Обрабатываю заявку от {discord_id} ({author_name})")
     sys.stdout.flush()
 
     try:
@@ -82,29 +66,14 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
     sys.stdout.flush()
 
-    босс = random.choice(["Кирилл Иванов", "Иван Иванов"])
-    рофл_заголовок = random.choice([
-        "Ой-ой, свеженькая заявОчка прилетела~ 💅",
-        "Минутку, котик, Леночка уже несёт боссам! 😏",
-        "Заявочка от красавчика! Сейчас покажу Кириллу/Ивану ☕",
-        "Ух ты, кто-то решил вступить! Леночка в деле ✨"
-    ])
-
     embed = discord.Embed(
-        title=рофл_заголовок,
-        description=f"{mention} {ic}",
+        title="Заявка от " + author_name,
+        description="Ожидает решения боссов",
         color=13369344,
         timestamp=discord.utils.utcnow()
     )
-    embed.set_author(
-            name="Кадровый отдел",
-            icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
-        )
+    embed.set_thumbnail(url=avatar_url)
     embed.add_field(name="Discord ID", value=str(discord_id), inline=False)
-    embed.set_footer(
-            text=f"Ивановы • Доложила {босс}",
-            icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
-        )
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
@@ -131,18 +100,13 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     await msg.add_reaction("✅")
     await msg.add_reaction("❌")
     await msg.add_reaction("📞")
-    # Выдача роли "На проверке"
+
+    # Роль "На проверке"
     try:
         guild = bot.get_guild(thread.guild.id)
-        if guild is None:
-            print("Guild не найден")
-            sys.stdout.flush()
-        else:
+        if guild:
             member = await guild.fetch_member(discord_id)
-            if member is None:
-                print(f"Пользователь {discord_id} не найден на сервере")
-                sys.stdout.flush()
-            else:
+            if member:
                 роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
                 if роль_проверка:
                     await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
@@ -151,8 +115,14 @@ async def обработать_заявку(discord_id: int, author_name: str, f
                 else:
                     print("Роль 'На проверке' не найдена")
                     sys.stdout.flush()
+            else:
+                print(f"Member не найден для {discord_id}")
+                sys.stdout.flush()
+        else:
+            print("Guild не найден")
+            sys.stdout.flush()
     except Exception as e:
-        print(f"Ошибка при выдаче роли 'На проверке': {e}")
+        print(f"Ошибка выдачи роли: {e}")
         sys.stdout.flush()
 
     # ЛС заявителю
@@ -165,7 +135,19 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         sys.stdout.flush()
 
 
-# Реакции
+# === Запуск ===
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f"Леночка полностью готова → {bot.user}")
+    sys.stdout.flush()
+
+
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -231,30 +213,15 @@ async def on_raw_reaction_add(payload):
     except Exception as e:
         print(f"Ошибка реакции: {e}")
         sys.stdout.flush()
+
+
 # === ЗАПУСК ===
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f"Леночка полностью готова → {bot.user}")
-
-
 def run_flask():
     port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
     print("Flask запущен")
+    sys.stdout.flush()
 
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
-
-
-
-
-
-
-
