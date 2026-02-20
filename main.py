@@ -214,7 +214,7 @@ async def on_raw_reaction_add(payload):
                 print(f"Выдана роль одобрено {discord_id_str}")
                 
 
-вердикт_текст = {
+    вердикт_текст = {
         "✅": random.choice(РОФЛ_ОДОБРЕНО),
         "❌": random.choice(РОФЛ_ОТКЛОНЕНО),
         "📞": random.choice(РОФЛ_УТОЧНИТЬ)
@@ -224,10 +224,10 @@ async def on_raw_reaction_add(payload):
     await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
 
     # Отправляем в ЛС заявителю
-    try:
+try:
         await member.send(вердикт_текст)
         print(f"Рофл-вердикт отправлен в ЛС: {вердикт_текст[:30]}...")
-    except Exception as e:
+except Exception as e:
         print(f"Не получилось отправить вердикт в ЛС: {e}")
         sys.stdout.flush()
 
@@ -242,5 +242,6 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
