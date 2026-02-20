@@ -214,11 +214,11 @@ async def on_raw_reaction_add(payload):
                 print(f"Выдана роль одобрено {discord_id_str}")
                 
 
-    вердикт_текст = {
-        "✅": random.choice(РОФЛ_ОДОБРЕНО),
-        "❌": random.choice(РОФЛ_ОТКЛОНЕНО),
-        "📞": random.choice(РОФЛ_УТОЧНИТЬ)
-    }[emoji]
+        вердикт_текст = {
+            "✅": random.choice(РОФЛ_ОДОБРЕНО),
+            "❌": random.choice(РОФЛ_ОТКЛОНЕНО),
+            "📞": random.choice(РОФЛ_УТОЧНИТЬ)
+        }[emoji]
 
     # Пишем в канал
     await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
@@ -242,6 +242,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
