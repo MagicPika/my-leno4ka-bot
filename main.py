@@ -106,7 +106,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
             auto_archive_duration=10080
         )
         print(f"Тред создан: {thread.name}")
-        пинг = "<@924956705756971028> <@&1457319043672576008>"
+        пинг = "<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
         try:
             await thread.send(пинг + " новая заявка! Леночка уже в ожидании вашего решения~ 📩💕")
             print("Пинг боссов успешно отправлен в тред")
@@ -145,7 +145,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         print(f"Не получилось написать в ЛС {discord_id}: {e}")
         sys.stdout.flush()
     async def ебанутый_таймер_истерики():
-        await asyncio.sleep(30)  # 24 часа = первые сутки тишины
+        await asyncio.sleep(24 * 3600)  # 24 часа = первые сутки тишины
 
         уровни_ебанутости = [
             ("Милый пинок", [
@@ -164,7 +164,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         ]
 
         for уровень, фразы in уровни_ебанутости:
-            await asyncio.sleep(6)  # каждые 6 часов новый уровень ада
+            await asyncio.sleep(6 * 3600)  # каждые 6 часов новый уровень ада
 
             try:
                 свежий_msg = await thread.fetch_message(msg.id)
@@ -184,7 +184,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
                 return
 
         # Финальный пиздец через 72 часа
-        await thread.send(f"<@924956705756971028> <@695943956856307744> Всё, Леночка уходит нахуй. Боссы — ленивые долбоёбы, заявка закрыта навсегда 🖕")
+        await thread.send(f"@924956705756971028> <@695943956856307744> <@&1457319043672576008> Всё, Леночка уходит нахуй. Боссы — ленивые долбоёбы, заявка закрыта навсегда 🖕")
         await thread.edit(archived=True, locked=True)
         print("Тред заархивирован за бездействие боссов")
 
@@ -287,6 +287,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
