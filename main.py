@@ -27,6 +27,11 @@ SECRET = "2122428Matros"
     "Боссы сказали ДА! Добро пожаловать, солнышко 😘"
 ]
 
+РОФЛ_ОТКЛОНЕНО = [
+    "Ебошь отседа",
+    "Уебись тапком блять"
+]
+
 # Flask — принимает заявки из формы
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
@@ -202,6 +207,7 @@ async def on_raw_reaction_add(payload):
             if роль_одобрено:
                 await member.add_roles(роль_одобрено, reason="Заявка одобрена")
                 print(f"Выдана роль одобрено {discord_id_str}")
+                
 
         await member.send(random.choice({
             "✅": РОФЛ_ОДОБРЕНО,
@@ -225,3 +231,4 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
