@@ -221,7 +221,7 @@ async def on_raw_reaction_add(payload):
         }[emoji]
 
     # Пишем в канал
-    await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
+await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
 
     # Отправляем в ЛС заявителю
 try:
@@ -242,6 +242,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
