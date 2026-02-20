@@ -119,6 +119,29 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     try:
         await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
         print(f"Успешно написали в ЛС {discord_id}")
+
+async def напомнить_через_сутки():
+    await asyncio.sleep(60)
+
+    try:
+        свежий_msg = await thread.fetch_message(msg.id)
+        реакции = свежий_msg.reactions
+        has_reaction = any(r.emoji in ["✅", "❌", "📞"] for r in реакции)
+
+        if not has_reaction:
+            трэш = random.choice([
+                "БЛЯТЬ, ВЫ ЧЁ, СПИТЕ?! Заявка висит сутки, Леночка уже в ярости 😡",
+                "Эй, Кирилл и Иван, вы там живые вообще? Заявка пылится, как ваш член в штанах 💀",
+                "24 часа прошло, а вы даже не пошевелились. Леночка начинает думать, что вы импотенты 🤡",
+                "Напоминашка: заявка всё ещё ждёт. Если не отреагируете — Леночка придёт к вам в ЛС с ремнём 😈",
+                "Вы серьёзно? Сутки прошло, а реакции ноль. Леночка разочарована в человечестве 🖕"
+            ])
+            await thread.send(трэш)
+            print(f"Ебанутый пинок в тред {thread.name}")
+    except:
+        pass  # если тред удалён или ошибка — похуй
+
+bot.loop.create_task(напомнить_через_сутки())
     except Exception as e:
         print(f"Не получилось написать в ЛС {discord_id}: {e}")
 
@@ -215,3 +238,4 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
