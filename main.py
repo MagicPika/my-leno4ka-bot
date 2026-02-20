@@ -159,6 +159,7 @@ async def on_ready():
 
 
 @bot.event
+@bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
         return
@@ -178,7 +179,8 @@ async def on_raw_reaction_add(payload):
 
     try:
         message = await channel.fetch_message(payload.message_id)
-    except:
+    except Exception as e:
+        print(f"Не удалось взять сообщение: {e}")
         return
 
     if not message.embeds:
@@ -202,46 +204,41 @@ async def on_raw_reaction_add(payload):
             print(f"Member не найден для {discord_id_str}")
             return
 
+        # Снимаем "На проверке" в любом случае
         роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
         if роль_проверка and роль_проверка in member.roles:
             await member.remove_roles(роль_проверка, reason="Заявка обработана")
             print(f"Снята роль проверки у {discord_id_str}")
 
+        # Выдача роли при одобрении
         if emoji == "✅":
             роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
             if роль_одобрено:
                 await member.add_roles(роль_одобрено, reason="Заявка одобрена")
                 print(f"Выдана роль одобрено {discord_id_str}")
-                
 
+        # Вердикт в ЛС — твой словарь
         вердикт_текст = {
             "✅": random.choice(РОФЛ_ОДОБРЕНО),
             "❌": random.choice(РОФЛ_ОТКЛОНЕНО),
             "📞": random.choice(РОФЛ_УТОЧНИТЬ)
         }[emoji]
 
-    # Пишем в канал
-await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
+        # Пишем в канал
+        await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
 
-    # Отправляем в ЛС заявителю
-try:
+        # Отправляем в ЛС
         await member.send(вердикт_текст)
-        print(f"Рофл-вердикт отправлен в ЛС: {вердикт_текст[:30]}...")
-except Exception as e:
-        print(f"Не получилось отправить вердикт в ЛС: {e}")
-        sys.stdout.flush()
+        print(f"Вердикт отправлен в ЛС: {вердикт_текст[:30]}...")
 
-
-# === ЗАПУСК ===
-def run_flask():
-    port = int(os.getenv("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False)
-    print("Flask запущен")
+    except Exception as e:
+        print(f"Ошибка реакции: {e}")
     sys.stdout.flush()
 
 
 threading.Thread(target=run_flask, daemon=True).start()
 bot.run(TOKEN)
+
 
 
 
