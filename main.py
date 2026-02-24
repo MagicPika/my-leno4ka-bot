@@ -9,6 +9,7 @@ import sys
 import asyncio
 import datetime
 from discord import app_commands, TextChannel, Role
+from discord.ui import Modal, TextInput, RoleSelect, View
 app = Flask(__name__)
 
 # === НАСТРОЙКИ ===
@@ -508,6 +509,7 @@ class ПолнаяМодалка(discord.ui.Modal, title="Настройки Л�
                 view=None
             )
 bot.run(TOKEN)
+
 
 
 
