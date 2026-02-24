@@ -308,18 +308,25 @@ async def on_raw_reaction_add(payload):
         member = await guild.fetch_member(int(discord_id_str))
         if not member:
             print(f"Member не найден для {discord_id_str}")
+            sys.stdout.flush()
             return
 
         роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
         if роль_проверка and роль_проверка in member.roles:
             await member.remove_roles(роль_проверка, reason="Заявка обработана")
             print(f"Снята роль проверки у {discord_id_str}")
+            sys.stdout.flush()
 
         if emoji == "✅":
             роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
             if роль_одобрено:
-                await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-                print(f"Выдана роль одобрено {}")
+                try:
+                    await member.add_roles(роль_одобрено, reason="Заявка одобрена")
+                    print(f"Выдана роль одобрено {discord_id_str} ({member.display_name})")
+                    sys.stdout.flush()
+                except Exception as role_err:
+                    print(f"Ошибка выдачи роли одобрено {discord_id_str}: {role_err}")
+                    sys.stdout.flush()
 
         вердикт_текст = {
             "✅": random.choice(РОФЛ_ОДОБРЕНО),
@@ -328,12 +335,12 @@ async def on_raw_reaction_add(payload):
         }[emoji]
 
         await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
-
         await member.send(вердикт_текст)
-        print(f"Вердикт отправлен в ЛС: {вердикт_текст[:30]}...")
+        print(f"Вердикт отправлен в ЛС {discord_id_str}: {вердикт_текст[:30]}...")
+        sys.stdout.flush()
 
     except Exception as e:
-        print(f"Ошибка реакции: {e}")
+        print(f"Ошибка реакции {emoji} для {discord_id_str}: {e}")
         sys.stdout.flush()
 
 
@@ -581,6 +588,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
