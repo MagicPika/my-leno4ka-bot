@@ -462,55 +462,71 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(комплимент)
 
 
+# Слэш-команда /настройки
 @bot.tree.command(name="настройки", description="Открыть настройки Леночки")
 @app_commands.default_permissions(administrator=True)
 async def слэш_настройки(interaction: discord.Interaction):
-    await interaction.response.send_modal(ПолнаяМодалка())
+    await interaction.response.send_modal(НастройкиМодалка())
 
-class НастройкиView(discord.ui.View):
-    @discord.ui.button(label="Форумный канал", style=discord.ButtonStyle.primary)
-    async def канал(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(МодалКанал())
 
-    @discord.ui.button(label="Роль 'На проверке'", style=discord.ButtonStyle.primary)
-    async def роль_проверка(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(МодалРольПроверка())
-
-class ПолнаяМодалка(discord.ui.Modal, title="Настройки Леночки 💅"):
-    канал = discord.ui.TextInput(
-        label="Форумный канал (ID или #упоминание)",
-        placeholder="1458881043653197896 или #заявки",
+class НастройкиМодалка(Modal, title="Настройки Леночки 💅"):
+    канал = TextInput(
+        label="Форумный канал",
+        placeholder="#заявки или ID канала",
         style=discord.TextStyle.short,
-        required=True
+        required=True,
+        max_length=50
     )
-    роль_одобрено = discord.ui.TextInput(
-        label="Роль 'Одобрено' (ID или @упоминание)",
-        placeholder="1473913198016069642 или @Одобрено",
+
+    роль_одобрено = TextInput(
+        label="Роль 'Одобрено'",
+        placeholder="@Одобрено или ID роли",
         style=discord.TextStyle.short,
-        required=True
+        required=True,
+        max_length=50
     )
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            канал_id = int(self.канал.value.strip("<#> "))
-            роль_id = int(self.роль_одобрено.value.strip("<@&> "))
+            # Парсим канал (убираем # и < > если вставили упоминание)
+            канал_значение = self.канал.value.strip("<#> ")
+            канал_id = int(канал_значение)
 
+            # Парсим роль (убираем @& и < >)
+            роль_значение = self.роль_одобрено.value.strip("<@&> ")
+            роль_id = int(роль_значение)
+
+            # Меняем глобальные переменные
             global FORUM_CHANNEL_ID, РОЛЬ_ОДОБРЕНО
+            старый_канал = FORUM_CHANNEL_ID
+            старый_роль = РОЛЬ_ОДОБРЕНО
+
             FORUM_CHANNEL_ID = канал_id
             РОЛЬ_ОДОБРЕНО = роль_id
 
             await interaction.response.edit_message(
-                content=f"Настройки обновлены!\n"
-                        f"Форум: <#{канал_id}>\n"
-                        f"Роль одобрено: <@&{роль_id}> 💕",
-                view=None
+                content=(
+                    f"Настройки обновлены! 🎉\n"
+                    f"Форумный канал: <#{канал_id}> (был <#{старый_канал}>)\n"
+                    f"Роль одобрено: <@&{роль_id}> (была <@&{старый_роль}>)"
+                ),
+                view=None,
+                ephemeral=True  # видно только тебе
             )
-        except:
+        except ValueError:
             await interaction.response.edit_message(
-                content="Леночка запуталась в цифрах... 😔 Пришли всё заново, пожалуйста",
-                view=None
+                content="Леночка не разобрала цифры... 😔\nПришли правильный ID канала и роли",
+                view=None,
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.edit_message(
+                content=f"Что-то сломалось... Леночка в шоке 😭\nОшибка: {str(e)}",
+                view=None,
+                ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
