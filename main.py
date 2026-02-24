@@ -470,7 +470,6 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(комплимент)
 
 
-# Слэш-команда /настройки — показывает статус и кнопку для изменения
 @bot.tree.command(name="настройки", description="Посмотреть и изменить настройки Леночки")
 @app_commands.default_permissions(administrator=True)
 async def слэш_настройки(interaction: discord.Interaction):
@@ -497,7 +496,6 @@ async def слэш_настройки(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
-# Модалка для изменения
 class НастройкиМодалка(discord.ui.Modal, title="Изменить настройки Леночки"):
     канал = discord.ui.TextInput(
         label="Новый форумный канал",
@@ -516,12 +514,14 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
     async def on_submit(self, interaction: discord.Interaction):
         изменения = []
 
+        # Объявляем global САМЫМИ ПЕРВЫМИ строками функции!
+        global FORUM_CHANNEL_ID, РОЛЬ_ОДОБРЕНО
+
         try:
             if self.канал.value.strip():
                 значение = self.канал.value.strip("<#> ")
                 новый_id = int(значение)
                 старый = FORUM_CHANNEL_ID
-                global FORUM_CHANNEL_ID
                 FORUM_CHANNEL_ID = новый_id
                 изменения.append(f"Форум: <#{новый_id}> (был <#{старый}>)")
 
@@ -529,7 +529,6 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 значение = self.роль_одобрено.value.strip("<@&> ")
                 новый_id = int(значение)
                 старый = РОЛЬ_ОДОБРЕНО
-                global РОЛЬ_ОДОБРЕНО
                 РОЛЬ_ОДОБРЕНО = новый_id
                 изменения.append(f"Роль одобрено: <@&{новый_id}> (была <@&{старый}>)")
 
@@ -545,13 +544,20 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                     view=None,
                     ephemeral=True
                 )
-        except:
+        except ValueError:
             await interaction.response.edit_message(
-                content="Леночка не разобрала цифры... 😔 Пришли всё заново",
+                content="Леночка не разобрала цифры... 😔 Пришли правильные ID",
+                view=None,
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.edit_message(
+                content=f"Что-то сломалось... Ошибка: {str(e)} 😭",
                 view=None,
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
