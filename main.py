@@ -91,7 +91,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
     embed.set_footer(
-    text=f"Ивановы • Поставь ✅ ❌ 📞",
+    text=f"Ивановы • Поставь ✅ для одобрения, ❌ для отклонения, 📞 для уточнения информации. Проверяющие, пожалуйста, обновите статус заявки вручную.",
     icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
     )
     channel = bot.get_channel(FORUM_CHANNEL_ID)
@@ -434,6 +434,7 @@ async def похвали(ctx, member: discord.Member = None):
 
     await ctx.send(комплимент)
 bot.run(TOKEN)
+
 
 
 
