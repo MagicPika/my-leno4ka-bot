@@ -290,14 +290,14 @@ async def on_raw_reaction_add(payload):
     discord_id_str = str(discord_id)
 
     if discord_id_str.isdigit() and 6 <= len(discord_id_str) <= 18:
-    значение = f"<@{discord_id_str}>"
+        значение = f"<@{discord_id_str}>"
     else:
-    значение = discord_id_str or "Не указан"  # на случай если ID пустой
+        значение = discord_id_str or "Не указан"  # на случай если ID пустой
 
     embed.add_field(
-    name="Discord ID",
-    value=значение,
-    inline=True
+        name="Discord ID",
+        value=значение,
+        inline=True
 )
 
     if not discord_id_str or not discord_id_str.isdigit():
@@ -581,6 +581,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
