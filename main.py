@@ -111,13 +111,17 @@ async def обработать_заявку(discord_id: int, author_name: str, f
     )
     embed.set_thumbnail(url=avatar_url)
 
-    # Валидация и красивый Discord ID
-    raw_input = str(discord_id).strip()
+    # ── Валидация и красивый Discord ID ────────────────────────────────
+    raw_input = str(discord_id).strip()  # то, что пришло из формы
+
+    # Убираем весь мусор: <@ ! > пробелы буквы и т.д.
     clean_id = ''.join(c for c in raw_input if c.isdigit())
 
     if clean_id and 17 <= len(clean_id) <= 19:
+        # Нормальный ID → кликабельный тег
         значение = f"<@{clean_id}>"
     else:
+        # Проблема → показываем как есть + предупреждение
         значение = raw_input or "Не указан"
         if raw_input and raw_input != clean_id:
             значение += " ⚠️ (ID кривой, проверьте)"
@@ -576,6 +580,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
