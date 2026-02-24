@@ -8,7 +8,7 @@ import random
 import sys
 import asyncio
 import datetime
-import app_commands, TextChannel, Role
+from discord import app_commands, TextChannel, Role
 app = Flask(__name__)
 
 # === НАСТРОЙКИ ===
@@ -482,6 +482,7 @@ class МодалКанал(discord.ui.Modal, title="Смена форумног�
         FORUM_CHANNEL_ID = self.канал.value.id
         await interaction.response.edit_message(content=f"Форумный канал изменён на <#{FORUM_CHANNEL_ID}> 💕", view=None)
 bot.run(TOKEN)
+
 
 
 
