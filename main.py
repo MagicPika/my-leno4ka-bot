@@ -580,7 +580,32 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 view=None,
                 ephemeral=True
             )
+@bot.tree.command(name="партия", description="Ссылка на сервер партии")
+async def партия(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="Вступай в партию прямо сейчас! 🚩",
+        description=(
+            "Здесь всё самое интересное:\n"
+            "• Свежие новости и планы\n"
+            "• Горячие обсуждения\n"
+            "• Мемы, кофе и Леночка 24/7 ☕💙\n\n"
+            "Не сиди в сторонке — заходи!"
+        ),
+        color=0x00ff00  # зелёный
+    )
+    embed.set_thumbnail(url="https://cdn.discordapp.com/icons/твой_server_id/иконка_партии.png")  # иконка сервера
+
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(
+        label="Присоединиться",
+        style=discord.ButtonStyle.link,
+        url="https://discord.gg/твой_инвайт_партии",
+        emoji="💪"
+    ))
+
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 bot.run(TOKEN)
+
 
 
 
