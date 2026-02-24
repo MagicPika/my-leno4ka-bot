@@ -292,10 +292,10 @@ async def on_raw_reaction_add(payload):
 
     discord_id_str = None
     for field in embed.fields:
-    if field.name == "Discord ID":
-        raw_value = field.value.strip()
-        discord_id_str = ''.join(c for c in raw_value if c.isdigit())
-        break
+        if field.name == "Discord ID":
+            raw_value = field.value.strip()
+            discord_id_str = ''.join(c for c in raw_value if c.isdigit())
+            break
 
     if not discord_id_str:
         print("Не нашли Discord ID в embed")
@@ -581,6 +581,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
