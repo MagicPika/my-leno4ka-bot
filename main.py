@@ -290,7 +290,7 @@ async def on_raw_reaction_add(payload):
     discord_id_str = None
     for field in embed.fields:
         if field.name == "Discord ID":
-            discord_id_str = field.value.strip()  # убираем пробелы
+            discord_id_str = field.value.strip()  # убираем пробелы/мусор
             break
 
     if not discord_id_str or not discord_id_str.isdigit():
@@ -314,13 +314,9 @@ async def on_raw_reaction_add(payload):
         if emoji == "✅":
             роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
             if роль_одобрено:
-                try:
-                    await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-                    print(f"Выдана роль одобрено {discord_id_str} ({member.display_name})")
-                    sys.stdout.flush()
-                except Exception as role_err:
-                    print(f"Ошибка выдачи роли одобрено {discord_id_str}: {role_err}")
-                    sys.stdout.flush()
+                await member.add_roles(роль_одобрено, reason="Заявка одобрена")
+                print(f"Выдана роль одобрено {discord_id_str} ({member.display_name})")
+                sys.stdout.flush()
 
         вердикт_текст = {
             "✅": random.choice(РОФЛ_ОДОБРЕНО),
@@ -329,7 +325,6 @@ async def on_raw_reaction_add(payload):
         }[emoji]
 
         await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
-
         await member.send(вердикт_текст)
         print(f"Вердикт отправлен в ЛС {discord_id_str}: {вердикт_текст[:30]}...")
         sys.stdout.flush()
@@ -583,6 +578,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
