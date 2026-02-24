@@ -110,7 +110,7 @@ embed = discord.Embed(
         color=13369344,
         timestamp=discord.utils.utcnow()
     )
-    embed.set_thumbnail(url=avatar_url)
+embed.set_thumbnail(url=avatar_url)
 
     # ── Валидация и красивый Discord ID ────────────────────────────────
     raw_input = str(discord_id).strip()  # то, что пришло из формы
@@ -593,6 +593,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
