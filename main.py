@@ -103,44 +103,32 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         print(f"Не удалось взять аватарку {discord_id}: {e}")
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
     sys.stdout.flush()
-
-embed = discord.Embed(
+    embed = discord.Embed(
         title="Заявка от " + author_name,
         description="Ожидает решения боссов",
         color=13369344,
         timestamp=discord.utils.utcnow()
     )
-embed.set_thumbnail(url=avatar_url)
+    embed.set_thumbnail(url=avatar_url)
 
-    # ── Валидация и красивый Discord ID ────────────────────────────────
-    raw_input = str(discord_id).strip()  # то, что пришло из формы
+    # Валидация и красивый Discord ID
+    raw_input = str(discord_id).strip()
+    clean_id = ''.join(c for c in raw_input if c.isdigit())
 
-    # 1. Убираем весь мусор: <@ ! > пробелы и т.д.
-    clean_digits = ''.join(c for c in raw_input if c.isdigit())
-
-    # 2. Проверяем, похоже ли на настоящий Discord ID
-    if clean_digits and 17 <= len(clean_digits) <= 19:
-        # Нормальный ID → делаем кликабельный тег
-        display_value = f"<@{clean_digits}>"
-        log_info = f"Валидный ID: {clean_digits} → кликабельный тег"
+    if clean_id and 17 <= len(clean_id) <= 19:
+        значение = f"<@{clean_id}>"
     else:
-        # Проблема → показываем как есть + предупреждение
-        display_value = raw_input or "Не указан"
-        if raw_input and raw_input != clean_digits:
-            display_value += " ⚠️ (ID кривой, проверьте)"
-        elif not clean_digits:
-            display_value += " ⚠️ (нет цифр)"
-        log_info = f"Невалидный/пустой ID: {raw_input}"
+        значение = raw_input or "Не указан"
+        if raw_input and raw_input != clean_id:
+            значение += " ⚠️ (ID кривой, проверьте)"
+        elif not clean_id:
+            значение += " ⚠️ (нет цифр)"
 
     embed.add_field(
         name="Discord ID",
-        value=display_value,
+        value=значение,
         inline=False
     )
-
-    print(f"Discord ID в embed: {log_info}")
-    sys.stdout.flush()
-    # ────────────────────────────────────────────────────────────────────
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
@@ -593,6 +581,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
