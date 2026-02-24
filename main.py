@@ -228,9 +228,17 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"Леночка полностью готова → {bot.user}")
-    await bot.tree.sync(guild=interaction.guild)
-    print("Слэш-команды синхронизированы")
     sys.stdout.flush()
+    
+    # Синхронизируем глобально (для всех серверов)
+    await bot.tree.sync()
+    print("Слэш-команды синхронизированы глобально")
+    
+    # Если хочешь синхронизировать только на конкретном сервере (быстрее, но только там)
+    # guild = bot.get_guild(ТВОЙ_GUILD_ID)
+    # if guild:
+    #     await bot.tree.sync(guild=guild)
+    #     print("Слэш-команды синхронизированы на сервере")
 
 
 @bot.event
@@ -462,7 +470,7 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(комплимент)
 
 
-# Слэш-команда /настройки — показывает статус и открывает модалку для изменения
+# Слэш-команда /настройки — показывает статус и кнопку для изменения
 @bot.tree.command(name="настройки", description="Посмотреть и изменить настройки Леночки")
 @app_commands.default_permissions(administrator=True)
 async def слэш_настройки(interaction: discord.Interaction):
@@ -489,12 +497,13 @@ async def слэш_настройки(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
+# Модалка для изменения
 class НастройкиМодалка(discord.ui.Modal, title="Изменить настройки Леночки"):
     канал = discord.ui.TextInput(
         label="Новый форумный канал",
         placeholder="#заявки или ID",
         style=discord.TextStyle.short,
-        required=False  # можно оставить пустым, если не менять
+        required=False
     )
 
     роль_одобрено = discord.ui.TextInput(
@@ -511,16 +520,16 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
             if self.канал.value.strip():
                 значение = self.канал.value.strip("<#> ")
                 новый_id = int(значение)
-                global FORUM_CHANNEL_ID
                 старый = FORUM_CHANNEL_ID
+                global FORUM_CHANNEL_ID
                 FORUM_CHANNEL_ID = новый_id
                 изменения.append(f"Форум: <#{новый_id}> (был <#{старый}>)")
 
             if self.роль_одобрено.value.strip():
                 значение = self.роль_одобрено.value.strip("<@&> ")
                 новый_id = int(значение)
-                global РОЛЬ_ОДОБРЕНО
                 старый = РОЛЬ_ОДОБРЕНО
+                global РОЛЬ_ОДОБРЕНО
                 РОЛЬ_ОДОБРЕНО = новый_id
                 изменения.append(f"Роль одобрено: <@&{новый_id}> (была <@&{старый}>)")
 
@@ -543,6 +552,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
