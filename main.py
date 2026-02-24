@@ -593,18 +593,19 @@ async def партия(interaction: discord.Interaction):
         ),
         color=0x00ff00  # зелёный
     )
-    embed.set_thumbnail(url="https://cdn.discordapp.com/icons/твой_server_id/иконка_партии.png")  # иконка сервера
+    embed.set_thumbnail(url="https://cdn.discordapp.com/icons/1451011482799046718/c89d96733b3ec99edc7bf5398fa63710.webp?size=80&quality=lossless")  # иконка сервера
 
     view = discord.ui.View()
     view.add_item(discord.ui.Button(
         label="Присоединиться",
         style=discord.ButtonStyle.link,
-        url="https://discord.gg/твой_инвайт_партии",
+        url="https://discord.gg/84MyMtGxWP",
         emoji="💪"
     ))
 
     await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 bot.run(TOKEN)
+
 
 
 
