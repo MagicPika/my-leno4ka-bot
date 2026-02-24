@@ -292,11 +292,12 @@ async def on_raw_reaction_add(payload):
 
     discord_id_str = None
     for field in embed.fields:
-        if field.name == "Discord ID":
-            discord_id_str = field.value.strip()  # убираем пробелы/мусор
-            break
+    if field.name == "Discord ID":
+        raw_value = field.value.strip()
+        discord_id_str = ''.join(c for c in raw_value if c.isdigit())
+        break
 
-    if not discord_id_str or not discord_id_str.isdigit():
+    if not discord_id_str:
         print("Не нашли Discord ID в embed")
         sys.stdout.flush()
         return
