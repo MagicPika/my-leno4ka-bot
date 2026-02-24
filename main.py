@@ -459,11 +459,10 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(комплимент)
 
 
-@app_commands.command(name="настройки", description="Настройки Леночки")
-@app_commands.default_permissions(administrator=True)
-async def слэш_настройки(interaction: discord.Interaction):
-    # Можно отправить embed с текущими значениями
-    await interaction.response.send_message("Выбери, что менять:", ephemeral=True, view=НастройкиView())
+@bot.command(name="настройки")
+@commands.has_permissions(administrator=True)
+async def открыть_настройки(ctx):
+    await ctx.send("Открой настройки Леночки:", view=discord.ui.View().add_item(ПолнаяМодалка()))
 
 class НастройкиView(discord.ui.View):
     @discord.ui.button(label="Форумный канал", style=discord.ButtonStyle.primary)
@@ -474,14 +473,42 @@ class НастройкиView(discord.ui.View):
     async def роль_проверка(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(МодалРольПроверка())
 
-class МодалКанал(discord.ui.Modal, title="Смена форумного канала"):
-    канал = discord.ui.TextChannel("Укажи новый канал")
+class ПолнаяМодалка(discord.ui.Modal, title="Настройки Леночки 💅"):
+    канал = discord.ui.TextInput(
+        label="Форумный канал (ID или #упоминание)",
+        placeholder="1458881043653197896 или #заявки",
+        style=discord.TextStyle.short,
+        required=True
+    )
+    роль_одобрено = discord.ui.TextInput(
+        label="Роль 'Одобрено' (ID или @упоминание)",
+        placeholder="1473913198016069642 или @Одобрено",
+        style=discord.TextStyle.short,
+        required=True
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
-        global FORUM_CHANNEL_ID
-        FORUM_CHANNEL_ID = self.канал.value.id
-        await interaction.response.edit_message(content=f"Форумный канал изменён на <#{FORUM_CHANNEL_ID}> 💕", view=None)
+        try:
+            канал_id = int(self.канал.value.strip("<#> "))
+            роль_id = int(self.роль_одобрено.value.strip("<@&> "))
+
+            global FORUM_CHANNEL_ID, РОЛЬ_ОДОБРЕНО
+            FORUM_CHANNEL_ID = канал_id
+            РОЛЬ_ОДОБРЕНО = роль_id
+
+            await interaction.response.edit_message(
+                content=f"Настройки обновлены!\n"
+                        f"Форум: <#{канал_id}>\n"
+                        f"Роль одобрено: <@&{роль_id}> 💕",
+                view=None
+            )
+        except:
+            await interaction.response.edit_message(
+                content="Леночка запуталась в цифрах... 😔 Пришли всё заново, пожалуйста",
+                view=None
+            )
 bot.run(TOKEN)
+
 
 
 
