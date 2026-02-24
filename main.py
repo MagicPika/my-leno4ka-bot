@@ -257,7 +257,6 @@ async def on_ready():
     #     await bot.tree.sync(guild=guild)
     #     print("Слэш-команды синхронизированы на сервере")
 
-
 @bot.event
 async def on_raw_reaction_add(payload):
     if payload.user_id == bot.user.id:
@@ -332,7 +331,6 @@ async def on_raw_reaction_add(payload):
     except Exception as e:
         print(f"Ошибка реакции {emoji} для {discord_id_str}: {e}")
         sys.stdout.flush()
-
 
 # === Запуск ===
 def run_flask():
@@ -578,6 +576,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
