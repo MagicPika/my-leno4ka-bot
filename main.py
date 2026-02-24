@@ -228,6 +228,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"Леночка полностью готова → {bot.user}")
+    await bot.tree.sync()
+    print("Слэш-команды синхронизированы")
     sys.stdout.flush()
 
 
@@ -460,10 +462,10 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(комплимент)
 
 
-@bot.command(name="настройки")
-@commands.has_permissions(administrator=True)
-async def открыть_настройки(ctx):
-    await ctx.send("Открой настройки Леночки:", view=discord.ui.View().add_item(ПолнаяМодалка()))
+@bot.tree.command(name="настройки", description="Открыть настройки Леночки")
+@app_commands.default_permissions(administrator=True)
+async def слэш_настройки(interaction: discord.Interaction):
+    await interaction.response.send_modal(ПолнаяМодалка())
 
 class НастройкиView(discord.ui.View):
     @discord.ui.button(label="Форумный канал", style=discord.ButtonStyle.primary)
@@ -509,6 +511,7 @@ class ПолнаяМодалка(discord.ui.Modal, title="Настройки Л�
                 view=None
             )
 bot.run(TOKEN)
+
 
 
 
