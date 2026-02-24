@@ -287,21 +287,15 @@ async def on_raw_reaction_add(payload):
 
     embed = message.embeds[0]
 
-    discord_id_str = str(discord_id)
-
-    if discord_id_str.isdigit() and 6 <= len(discord_id_str) <= 18:
-        значение = f"<@{discord_id_str}>"
-    else:
-        значение = discord_id_str or "Не указан"  # на случай если ID пустой
-
-    embed.add_field(
-        name="Discord ID",
-        value=значение,
-        inline=True
-)
+    discord_id_str = None
+    for field in embed.fields:
+        if field.name == "Discord ID":
+            discord_id_str = field.value.strip()  # убираем пробелы
+            break
 
     if not discord_id_str or not discord_id_str.isdigit():
         print("Не нашли Discord ID в embed")
+        sys.stdout.flush()
         return
 
     try:
@@ -335,6 +329,7 @@ async def on_raw_reaction_add(payload):
         }[emoji]
 
         await message.reply(f"{payload.member.display_name} решил: {emoji} → заявка обработана")
+
         await member.send(вердикт_текст)
         print(f"Вердикт отправлен в ЛС {discord_id_str}: {вердикт_текст[:30]}...")
         sys.stdout.flush()
@@ -588,6 +583,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
