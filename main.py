@@ -8,7 +8,7 @@ import random
 import sys
 import asyncio
 import datetime
-
+import app_commands, TextChannel, Role
 app = Flask(__name__)
 
 # === НАСТРОЙКИ ===
@@ -457,7 +457,32 @@ async def похвали(ctx, member: discord.Member = None):
         )
 
     await ctx.send(комплимент)
+
+
+@app_commands.command(name="настройки", description="Настройки Леночки")
+@app_commands.default_permissions(administrator=True)
+async def слэш_настройки(interaction: discord.Interaction):
+    # Можно отправить embed с текущими значениями
+    await interaction.response.send_message("Выбери, что менять:", ephemeral=True, view=НастройкиView())
+
+class НастройкиView(discord.ui.View):
+    @discord.ui.button(label="Форумный канал", style=discord.ButtonStyle.primary)
+    async def канал(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(МодалКанал())
+
+    @discord.ui.button(label="Роль 'На проверке'", style=discord.ButtonStyle.primary)
+    async def роль_проверка(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(МодалРольПроверка())
+
+class МодалКанал(discord.ui.Modal, title="Смена форумного канала"):
+    канал = discord.ui.TextChannel("Укажи новый канал")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        global FORUM_CHANNEL_ID
+        FORUM_CHANNEL_ID = self.канал.value.id
+        await interaction.response.edit_message(content=f"Форумный канал изменён на <#{FORUM_CHANNEL_ID}> 💕", view=None)
 bot.run(TOKEN)
+
 
 
 
