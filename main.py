@@ -270,11 +270,18 @@ async def on_raw_reaction_add(payload):
 
     embed = message.embeds[0]
 
-    discord_id_str = None
-    for field in embed.fields:
-        if field.name == "Discord ID":
-            discord_id_str = field.value
-            break
+    discord_id_str = str(discord_id)
+
+    if discord_id_str.isdigit() and 6 <= len(discord_id_str) <= 18:
+    значение = f"<@{discord_id_str}>"
+    else:
+    значение = discord_id_str or "Не указан"  # на случай если ID пустой
+
+    embed.add_field(
+    name="Discord ID",
+    value=значение,
+    inline=True
+)
 
     if not discord_id_str or not discord_id_str.isdigit():
         print("Не нашли Discord ID в embed")
@@ -295,7 +302,7 @@ async def on_raw_reaction_add(payload):
             роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
             if роль_одобрено:
                 await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-                print(f"Выдана роль одобрено {discord_id_str}")
+                print(f"Выдана роль одобрено {}")
 
         вердикт_текст = {
             "✅": random.choice(РОФЛ_ОДОБРЕНО),
@@ -557,6 +564,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
