@@ -585,13 +585,11 @@ async def партия(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Вступай в партию прямо сейчас! 🚩",
         description=(
-            "Здесь всё самое интересное:\n"
-            "• Свежие новости и планы\n"
-            "• Горячие обсуждения\n"
-            "• Мемы, кофе и Леночка 24/7 ☕💙\n\n"
+            "Север России — это политическая партия, патриотического единства и социально ориентированного Санкт-Петербурга. Она призвана отстаивать интересы жителей северных и удалённых территорий, развивать стратегические регионы страны, продвигать идеи суверенитета, справедливости и экономического укрепления России через развитие регионов."
+            "Север держит страну. Мы держим слово."\n\n"
             "Не сиди в сторонке — заходи!"
         ),
-        color=0x00ff00  # зелёный
+        color=0xd5eeff  
     )
     embed.set_thumbnail(url="https://cdn.discordapp.com/icons/1451011482799046718/c89d96733b3ec99edc7bf5398fa63710.webp?size=80&quality=lossless")  # иконка сервера
 
@@ -605,6 +603,7 @@ async def партия(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 bot.run(TOKEN)
+
 
 
 
