@@ -104,7 +104,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
     sys.stdout.flush()
 
-    e    embed = discord.Embed(
+        embed = discord.Embed(
         title="Заявка от " + author_name,
         description="Ожидает решения боссов",
         color=13369344,
@@ -593,6 +593,7 @@ class НастройкиМодалка(discord.ui.Modal, title="Изменить
                 ephemeral=True
             )
 bot.run(TOKEN)
+
 
 
 
