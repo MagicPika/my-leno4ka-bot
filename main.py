@@ -51,13 +51,12 @@ def принимать_заявку():
     bot.loop.create_task(обработать_заявку_2_0(int(discord_id), author_name, fields))
     return jsonify({"status": "ok"}), 200
 # Вынеси класс КНОПКИЗаявки сюда, перед функцией обработать_заявку_2_0
+# ================= Кнопки =================
 class КнопкиЗаявки(View):
     def __init__(self, user: discord.User, thread: discord.Thread):
         super().__init__(timeout=None)
         self.user = user
         self.thread = thread
-
-    # ... все кнопки approve / decline / clarify как раньше ...
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -80,7 +79,7 @@ class КнопкиЗаявки(View):
             if одобрена_тег:
                 await self.thread.add_tags([одобрена_тег])
         except:
-            pass  # если не форум — игнорируем
+            pass
         self.stop()
 
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
@@ -111,40 +110,6 @@ class КнопкиЗаявки(View):
             pass
         self.stop()
 
-        view = КнопкиЗаявки(user=user, thread=thread)
-        await thread.send("Выберите действие:", view=view)
-
-    except Exception as e:
-        print(f"Ошибка создания треда или кнопок: {e}")
-        return
-
-    # Роль "На проверке"
-    try:
-        guild = bot.get_guild(thread.guild.id)
-        if guild:
-            member = await guild.fetch_member(discord_id)
-            if member:
-                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-                if роль_проверка:
-                    await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
-    except Exception as e:
-        print(f"Ошибка выдачи роли 'На проверке': {e}")
-
-    # ЛС заявителю
-    try:
-        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-    except:
-        pass
-
-    # Таймер напоминания
-    async def таймер_леночки():
-        await asyncio.sleep(24*3600)
-        try:
-            await thread.send("Боссики, прошло 24 часа, Леночка напоминает о заявке 😌")
-        except:
-            pass
-    bot.loop.create_task(таймер_леночки())
-
 
 # ================= Обработка заявки =================
 async def обработать_заявку_2_0(discord_id: int, author_name: str, fields: list):
@@ -161,14 +126,12 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         timestamp=discord.utils.utcnow()
     )
     embed.set_thumbnail(url=avatar_url)
-
     clean_id = str(discord_id)
     embed.add_field(name="Discord ID", value=f"<@{clean_id}>", inline=False)
     for f in fields:
         embed.add_field(name=f.get("name","—"), value=f.get("value","—"), inline=f.get("inline", False))
     embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
 
-    # Форумный канал
     channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
@@ -183,7 +146,6 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         )
         thread = thread_with_msg.thread
         msg = thread_with_msg.message
-
         print(f"Тред создан: {thread.name} (ID: {thread.id})")
         sys.stdout.flush()
 
@@ -321,6 +283,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
 
