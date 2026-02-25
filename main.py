@@ -81,6 +81,7 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         return
 
     try:
+        # Создаём тред
         thread_with_msg = await channel.create_thread(
             name=f"Заявка — {author_name}",
             embed=embed,
@@ -92,14 +93,16 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         print(f"Тред создан: {thread.name} (ID: {thread.id})")
         sys.stdout.flush()
 
+        # Пинг боссов
         ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
         await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌")
 
+        # Кнопки
         view = КнопкиЗаявки(user=user, thread=thread)
         await thread.send("Выберите действие:", view=view)
 
     except Exception as e:
-        print(f"Ошибка создания треда или кнопок: {e}")
+        print(f"Ошибка при создании треда или отправке кнопок: {e}")
         sys.stdout.flush()
         return
 
@@ -317,6 +320,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
 
