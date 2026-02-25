@@ -81,7 +81,6 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         return
 
     try:
-        # Создаём тред
         thread_with_msg = await channel.create_thread(
             name=f"Заявка — {author_name}",
             embed=embed,
@@ -93,11 +92,9 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         print(f"Тред создан: {thread.name} (ID: {thread.id})")
         sys.stdout.flush()
 
-        # Пинг боссов
         ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
         await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌")
 
-        # Кнопки
         view = КнопкиЗаявки(user=user, thread=thread)
         await thread.send("Выберите действие:", view=view)
 
@@ -141,11 +138,14 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
     bot.loop.create_task(таймер_леночки())
         # ================= Кнопки =================
 # Класс кнопок — вынесен наружу, чтобы не ломать try
+# Вынеси класс КНОПКИЗаявки сюда, перед функцией обработать_заявку_2_0
 class КнопкиЗаявки(View):
     def __init__(self, user: discord.User, thread: discord.Thread):
         super().__init__(timeout=None)
         self.user = user
         self.thread = thread
+
+    # ... все кнопки approve / decline / clarify как раньше ...
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -320,6 +320,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
 
