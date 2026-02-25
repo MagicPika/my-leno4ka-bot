@@ -56,113 +56,116 @@ def принимать_заявку():
 
 # ── Асинхронная обработка заявки с кнопками ───────────────────────────────
 async def обработать_заявку_2_0(discord_id: int, author_name: str, fields: list):
+    print(f"Обрабатываю заявку от {discord_id} ({author_name})")
+    sys.stdout.flush()
+
     try:
         user = await bot.fetch_user(discord_id)
         avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    except:
+    except Exception as e:
+        print(f"Не удалось взять аватарку {discord_id}: {e}")
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
+    sys.stdout.flush()
 
     embed = discord.Embed(
         title=f"Заявка от {author_name}",
         description="Ожидает решения боссов",
-        color=0xff69b4,
+        color=0xED1FFC,
         timestamp=discord.utils.utcnow()
     )
     embed.set_thumbnail(url=avatar_url)
+
+    # Добавляем поля заявки
     embed.add_field(name="Discord ID", value=f"<@{discord_id}>", inline=False)
     for f in fields:
-        embed.add_field(name=f["name"], value=f.get("value", "—"), inline=f.get("inline", False))
+        embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
+    embed.set_footer(
+        text="Поставьте ✅ для одобрения, ❌ для отклонения, 📞 для уточнения.",
+        icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
+    )
 
+    # Получаем форумный канал
     channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
         return
 
-    view = View()
-    view.add_item(Button(label="✅ Одобрено", style=discord.ButtonStyle.success, custom_id=f"approve_{discord_id}"))
-    view.add_item(Button(label="❌ Отклонено", style=discord.ButtonStyle.danger, custom_id=f"reject_{discord_id}"))
-    view.add_item(Button(label="📞 Уточнить", style=discord.ButtonStyle.secondary, custom_id=f"clarify_{discord_id}"))
-
-    thread = await channel.create_thread(
+    # Создаем тред
+    thread_with_msg = await channel.create_thread(
         name=f"Заявка — {author_name}",
         embed=embed,
         auto_archive_duration=10080
     )
-    await thread.send(f"<@&{РОЛЬ_НА_ПРОВЕРКЕ}> новая заявка! Леночка ждёт решения~ 💌", view=view)
 
-    # Выдаём роль "На проверке"
-    guild = thread.guild
-    member = await guild.fetch_member(discord_id)
-    роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-    if member and роль_проверка:
-        await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
+    # Для отправки сообщений берем канал по ID
+    thread = bot.get_channel(thread_with_msg.id)
+
+    # Кнопки для админов
+    class КнопкиЗаявки(discord.ui.View):
+        def __init__(self, user: discord.User):
+            super().__init__(timeout=None)
+            self.user = user
+
+        @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
+        async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+            guild = interaction.guild
+            member = guild.get_member(self.user.id)
+            if member:
+                # Убираем роль "На проверке"
+                role_check = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+                if role_check in member.roles:
+                    await member.remove_roles(role_check)
+                # Добавляем роль "Одобрено"
+                role_ok = guild.get_role(РОЛЬ_ОДОБРЕНО)
+                if role_ok:
+                    await member.add_roles(role_ok)
+            await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
+            await interaction.response.send_message(f"Заявка {self.user.mention} одобрена ✅", ephemeral=True)
+            self.stop()
+
+        @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
+        async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
+            await interaction.response.send_message(f"Заявка {self.user.mention} отклонена ❌", ephemeral=True)
+            self.stop()
+
+        @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
+        async def clarify(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
+            await interaction.response.send_message(f"Попросили уточнения у {self.user.mention} 📞", ephemeral=True)
+            self.stop()
+
+    view = КнопкиЗаявки(user)
+
+    # Пингуем боссов
+    ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
+    await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌", view=view)
+
+    # Роль "На проверке"
+    try:
+        guild = bot.get_guild(thread.guild.id)
+        member = guild.get_member(discord_id)
+        role_check = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+        if member and role_check:
+            await member.add_roles(role_check, reason="Новая заявка — на проверке")
+    except Exception as e:
+        print(f"Ошибка выдачи роли 'На проверке': {e}")
 
     # ЛС заявителю
     try:
         await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-    except:
-        pass
+    except Exception as e:
+        print(f"Не получилось написать в ЛС {discord_id}: {e}")
 
-    # Логируем в лог-канал
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        await log_channel.send(f"Новая заявка от <@{discord_id}>: {author_name}")
+    # Таймеры Леночки
+    async def таймер_леночки():
+        await asyncio.sleep(24 * 3600)  # 24 часа
+        try:
+            await thread.send("Боссики, прошло 24 часа, Леночка напоминает о заявке 😌")
+        except:
+            pass
 
-# ── Обработчик кнопок ───────────────────────────────
-class ЗаявкаView(View):
-    def __init__(self):
-        super().__init__(timeout=None)  # без таймаута
-
-    @discord.ui.button(label="✅ Одобрено", style=discord.ButtonStyle.success)
-    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_verdict(interaction, "approve")
-
-    @discord.ui.button(label="❌ Отклонено", style=discord.ButtonStyle.danger)
-    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_verdict(interaction, "reject")
-
-    @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
-    async def clarify(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_verdict(interaction, "clarify")
-
-async def handle_verdict(interaction: discord.Interaction, verdict: str):
-    embed = interaction.message.embeds[0] if interaction.message.embeds else None
-    if not embed:
-        return
-    discord_id_field = [f.value for f in embed.fields if f.name == "Discord ID"]
-    if not discord_id_field:
-        return
-    discord_id = int(''.join(c for c in discord_id_field[0] if c.isdigit()))
-    guild = interaction.guild
-    member = await guild.fetch_member(discord_id)
-    if not member:
-        return
-
-    роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-    роль_одобрено = guild.get_role(РОЛЬ_ОДОБРЕНО)
-
-    if роль_проверка in member.roles:
-        await member.remove_roles(роль_проверка, reason="Заявка обработана")
-
-    if verdict == "approve" and роль_одобрено:
-        await member.add_roles(роль_одобрено, reason="Заявка одобрена")
-        текст = random.choice(РОФЛ_ОДОБРЕНО)
-    elif verdict == "reject":
-        текст = random.choice(РОФЛ_ОТКЛОНЕНО)
-    else:
-        текст = random.choice(РОФЛ_УТОЧНИТЬ)
-
-    try:
-        await member.send(текст)
-    except:
-        pass
-
-    await interaction.response.send_message(f"Решение принято: {verdict} для <@{discord_id}>", ephemeral=True)
-
-    # Лог
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        await log_channel.send(f"{interaction.user.mention} принял решение {verdict} по заявке <@{discord_id}>")
+    bot.loop.create_task(таймер_леночки())
 
 # ── Запуск Flask и бот ───────────────────────────────
 def run_flask():
@@ -199,4 +202,5 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(f"{member.mention}, Леночка говорит: ты молодец! 💕")
 
 bot.run(TOKEN)
+
 
