@@ -77,29 +77,72 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
     channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
+        sys.stdout.flush()
         return
 
     try:
-        # Создаём тред с embed
         thread_with_msg = await channel.create_thread(
             name=f"Заявка — {author_name}",
             embed=embed,
             auto_archive_duration=10080
         )
-
         thread = thread_with_msg.thread
         msg = thread_with_msg.message
 
-        # Пинг боссов
+        print(f"Тред создан: {thread.name} (ID: {thread.id})")
+        sys.stdout.flush()
+
         ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
         await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌")
 
+        view = КнопкиЗаявки(user=user, thread=thread)
+        await thread.send("Выберите действие:", view=view)
+
+    except Exception as e:
+        print(f"Ошибка создания треда или кнопок: {e}")
+        sys.stdout.flush()
+        return
+
+    # Роль "На проверке"
+    try:
+        guild = bot.get_guild(thread.guild.id)
+        if guild:
+            member = await guild.fetch_member(discord_id)
+            if member:
+                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+                if роль_проверка:
+                    await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
+                    print(f"Роль 'На проверке' выдана {discord_id}")
+                    sys.stdout.flush()
+    except Exception as e:
+        print(f"Ошибка выдачи роли 'На проверке': {e}")
+        sys.stdout.flush()
+
+    # ЛС заявителю
+    try:
+        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
+        print(f"Успешно написали в ЛС {discord_id}")
+        sys.stdout.flush()
+    except Exception as e:
+        print(f"Не получилось написать в ЛС {discord_id}: {e}")
+        sys.stdout.flush()
+
+    # Таймер
+    async def таймер_леночки():
+        await asyncio.sleep(24*3600)
+        try:
+            await thread.send("Боссики, прошло 24 часа, Леночка напоминает о заявке 😌")
+        except:
+            pass
+
+    bot.loop.create_task(таймер_леночки())
         # ================= Кнопки =================
+# Класс кнопок — вынесен наружу, чтобы не ломать try
 class КнопкиЗаявки(View):
     def __init__(self, user: discord.User, thread: discord.Thread):
         super().__init__(timeout=None)
         self.user = user
-        self.thread = thread  # ← передаём thread в класс
+        self.thread = thread
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -115,15 +158,14 @@ class КнопкиЗаявки(View):
         await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
         await interaction.response.send_message(f"Заявка {self.user.mention} одобрена ✅", ephemeral=True)
         
-        # Добавляем тег "Одобрена" (если канал форумный)
+        # Тег одобрена
         try:
             теги = self.thread.available_tags
             одобрена_тег = next((t for t in теги if t.name == "Одобрена"), None)
             if одобрена_тег:
                 await self.thread.add_tags([одобрена_тег])
         except:
-            pass  # если не форум — просто пропускаем
-        
+            pass  # если не форум — игнорируем
         self.stop()
 
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
@@ -138,7 +180,6 @@ class КнопкиЗаявки(View):
                 await self.thread.add_tags([отклонена_тег])
         except:
             pass
-        
         self.stop()
 
     @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
@@ -153,7 +194,6 @@ class КнопкиЗаявки(View):
                 await self.thread.add_tags([уточнение_тег])
         except:
             pass
-        
         self.stop()
 
         view = КнопкиЗаявки(user=user, thread=thread)
@@ -277,6 +317,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
 
