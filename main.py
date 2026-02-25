@@ -165,27 +165,6 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
             pass
     bot.loop.create_task(таймер_леночки())
 
-# ================= Пересылка ЛС в тред =================
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    if isinstance(message.channel, discord.DMChannel):
-        user_id = message.author.id
-        for guild in bot.guilds:
-            forum = guild.get_channel(FORUM_CHANNEL_ID)
-            if forum and hasattr(forum, "threads"):
-                async for thread in forum.threads:
-                    if not thread.archived and thread.name.startswith("Заявка"):
-                        try:
-                            embed = (await thread.fetch_message(thread.id)).embeds[0]
-                            discord_field = next((f for f in embed.fields if f.name=="Discord ID"), None)
-                            if discord_field and str(user_id) in discord_field.value:
-                                await thread.send(f"📩 Сообщение от {message.author.mention}:\n{message.content}")
-                        except:
-                            continue
-        return
 
 # ================= Бот =================
 intents = discord.Intents.default()
@@ -242,6 +221,28 @@ class НастройкиМодалка(Modal, title="Изменить настр
         if self.роль_одобрено.value.strip():
             РОЛЬ_ОДОБРЕНО = int(self.роль_одобрено.value.strip("<@&> "))
         await interaction.response.send_message("Настройки обновлены 💕", ephemeral=True)
+# ================= Пересылка ЛС в тред =================
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    if isinstance(message.channel, discord.DMChannel):
+        user_id = message.author.id
+        for guild in bot.guilds:
+            forum = guild.get_channel(FORUM_CHANNEL_ID)
+            if forum and hasattr(forum, "threads"):
+                async for thread in forum.threads:
+                    if not thread.archived and thread.name.startswith("Заявка"):
+                        try:
+                            embed = (await thread.fetch_message(thread.id)).embeds[0]
+                            discord_field = next((f for f in embed.fields if f.name=="Discord ID"), None)
+                            if discord_field and str(user_id) in discord_field.value:
+                                await thread.send(f"📩 Сообщение от {message.author.mention}:\n{message.content}")
+                        except:
+                            continue
+        return
+
 
 # ================= Flask =================
 def run_flask():
@@ -251,3 +252,4 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
