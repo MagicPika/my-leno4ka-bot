@@ -156,7 +156,7 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
             
             self.stop()
 
-        view = КнопкиЗаявки(user=user)
+        view = КнопкиЗаявки(user=user, thread=thread)
         await thread.send("Выберите действие:", view=view)
 
     except Exception as e:
@@ -277,5 +277,6 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
