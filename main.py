@@ -96,40 +96,65 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
 
         # ================= Кнопки =================
         class КнопкиЗаявки(View):
-            def __init__(self, user: discord.User):
-                super().__init__(timeout=None)
-                self.user = user
-
-            @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
-            async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-                guild = interaction.guild
-                member = guild.get_member(self.user.id)
-                if member:
-                    role_check = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-                    if role_check in member.roles:
-                        await member.remove_roles(role_check)
-                    role_ok = guild.get_role(РОЛЬ_ОДОБРЕНО)
-                    if role_ok:
-                        await member.add_roles(role_ok)
-                await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
-                await interaction.response.send_message(f"Заявка {self.user.mention} одобрена ✅", ephemeral=True)
-                # Добавляем тег в тред
-                await thread.add_tags([t for t in thread.available_tags if t.name=="Одобрена"])
-                self.stop()
-
-            @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
-            async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-                await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
-                await interaction.response.send_message(f"Заявка {self.user.mention} отклонена ❌", ephemeral=True)
-                await thread.add_tags([t for t in thread.available_tags if t.name=="Отклонена"])
-                self.stop()
-
-            @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
-            async def clarify(self, interaction: discord.Interaction, button: discord.ui.Button):
-                await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
-                await interaction.response.send_message(f"Попросили уточнения у {self.user.mention} 📞", ephemeral=True)
-                await thread.add_tags([t for t in thread.available_tags if t.name=="На уточнении"])
-                self.stop()
+        def __init__(self, user: discord.User, thread: discord.Thread):
+            super().__init__(timeout=None)
+            self.user = user
+            self.thread = thread  # ← передаём thread в класс
+    
+        @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
+        async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+            guild = interaction.guild
+            member = guild.get_member(self.user.id)
+            if member:
+                role_check = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+                if role_check in member.roles:
+                    await member.remove_roles(role_check)
+                role_ok = guild.get_role(РОЛЬ_ОДОБРЕНО)
+                if role_ok:
+                    await member.add_roles(role_ok)
+            await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
+            await interaction.response.send_message(f"Заявка {self.user.mention} одобрена ✅", ephemeral=True)
+            
+            # Добавляем тег "Одобрена" (если канал форумный)
+            try:
+                теги = self.thread.available_tags
+                одобрена_тег = next((t for t in теги if t.name == "Одобрена"), None)
+                if одобрена_тег:
+                    await self.thread.add_tags([одобрена_тег])
+            except:
+                pass  # если не форум — просто пропускаем
+            
+            self.stop()
+    
+        @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
+        async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
+            await interaction.response.send_message(f"Заявка {self.user.mention} отклонена ❌", ephemeral=True)
+            
+            try:
+                теги = self.thread.available_tags
+                отклонена_тег = next((t for t in теги if t.name == "Отклонена"), None)
+                if отклонена_тег:
+                    await self.thread.add_tags([отклонена_тег])
+            except:
+                pass
+            
+            self.stop()
+    
+        @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
+        async def clarify(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
+            await interaction.response.send_message(f"Попросили уточнения у {self.user.mention} 📞", ephemeral=True)
+            
+            try:
+                теги = self.thread.available_tags
+                уточнение_тег = next((t for t in теги if t.name == "На уточнении"), None)
+                if уточнение_тег:
+                    await self.thread.add_tags([уточнение_тег])
+            except:
+                pass
+            
+            self.stop()
 
         view = КнопкиЗаявки(user=user)
         await thread.send("Выберите действие:", view=view)
@@ -252,4 +277,5 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
