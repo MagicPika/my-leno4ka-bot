@@ -2,47 +2,44 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import View
-from discord.ui import Button
+from discord.ui import Modal, TextInput, View
+import os, random, sys, asyncio, threading
 from flask import Flask, request, jsonify
-import threading, random, asyncio, os, sys, datetime
+
+app = Flask(__name__)
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("DISCORD_TOKEN")
 FORUM_CHANNEL_ID = 1458885875692732438
-LOG_CHANNEL_ID = 1457319047157911565  # канал для логов (добавь свой ID)
 SECRET = "2122428Matros"
 
 РОЛЬ_НА_ПРОВЕРКЕ = 1474320899598581791
 РОЛЬ_ОДОБРЕНО = 1457319043315929267
 
-# ── Смешные сообщения для заявок ───────────────────────────────
+# ------------------ РОФЛЫ ------------------
 РОФЛ_ПОЛУЧЕНО = [
-    "Ооо, свеженькая заявОчка прилетела~ Леночка уже несёт боссам...",
-    "Привеет, красавчик… Леночка увидела твою анкету...",
+    "Ооо, свеженькая заявОчка прилетела~ Леночка уже несёт боссам! 💌",
+    "Привет! Леночка увидела твою анкету 💓 Сейчас покажу наверх~"
 ]
 РОФЛ_ОДОБРЕНО = [
-    "Урааа~ 💕 Боссы сказали ДА! Заходи скорее...",
-    "Одобрено! Леночка в полном восторге, ты прошёл!",
+    "Урааа~ 💕 Боссы сказали ДА! Заходи скорее!",
+    "Одобрено! Леночка в восторге, ты с нами навсегда 😘✨"
 ]
 РОФЛ_ОТКЛОНЕНО = [
-    "Ой-ой… боссы сказали нет 😔 Но не грусти...",
-    "К сожалению, отказ… Леночка расстроилась вместе с тобой…",
+    "Ой-ой… боссы сказали нет 😔 Но не грусти, Леночка обнимает 💔",
+    "К сожалению, отказ… Но ты всё равно классный 😌"
 ]
 РОФЛ_УТОЧНИТЬ = [
-    "Боссы хотят уточнить детали! Напиши в канал или ЛС Леночке...",
-    "📞 Звоночек! Нужно кое-что уточнить, ждём тебя~",
+    "Боссы хотят уточнить детали! Напиши сюда, я передам 📞💕",
+    "Нужно больше инфы… Пиши в ЛС Леночке 🖊️"
 ]
 
-# ── Flask ───────────────────────────────
-app = Flask(__name__)
-
+# ================= Flask для формы =================
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
     auth = request.headers.get("Authorization")
     if auth != f"Bearer {SECRET}":
         return jsonify({"error": "Неверный ключ"}), 401
-
     data = request.json or {}
     discord_id = data.get("discordId")
     author_name = data.get("authorName", "Без имени")
@@ -54,64 +51,51 @@ def принимать_заявку():
     bot.loop.create_task(обработать_заявку_2_0(int(discord_id), author_name, fields))
     return jsonify({"status": "ok"}), 200
 
-# ── Асинхронная обработка заявки с кнопками ───────────────────────────────
+# ================= Обработка заявки =================
 async def обработать_заявку_2_0(discord_id: int, author_name: str, fields: list):
-    print(f"Обрабатываю заявку от {discord_id} ({author_name})")
-    sys.stdout.flush()
-
     try:
         user = await bot.fetch_user(discord_id)
         avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    except Exception as e:
-        print(f"Не удалось взять аватарку {discord_id}: {e}")
+    except:
         avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
-    sys.stdout.flush()
 
     embed = discord.Embed(
         title=f"Заявка от {author_name}",
         description="Ожидает решения боссов",
-        color=0xED1FFC,
+        color=0x85144b,
         timestamp=discord.utils.utcnow()
     )
     embed.set_thumbnail(url=avatar_url)
 
-    # Добавляем поля заявки
-    embed.add_field(name="Discord ID", value=f"<@{discord_id}>", inline=False)
+    clean_id = str(discord_id)
+    embed.add_field(name="Discord ID", value=f"<@{clean_id}>", inline=False)
     for f in fields:
-        embed.add_field(name=f["name"], value=f["value"] or "—", inline=f.get("inline", False))
-    embed.set_footer(
-        text="Поставьте ✅ для одобрения, ❌ для отклонения, 📞 для уточнения.",
-        icon_url="https://media.discordapp.net/attachments/1342349362600218624/1459185809654808608/ChatGPT_Image_4_._2026_._15_58_32.png"
-    )
+        embed.add_field(name=f.get("name","—"), value=f.get("value","—"), inline=f.get("inline", False))
+    embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
 
-    # Получаем форумный канал
+    # Форумный канал
     channel = bot.get_channel(FORUM_CHANNEL_ID)
     if not channel:
         print("Форумный канал не найден")
-        sys.stdout.flush()
         return
 
     try:
-        # Создаём тред
+        # Создаём тред с embed
         thread_with_msg = await channel.create_thread(
             name=f"Заявка — {author_name}",
             embed=embed,
             auto_archive_duration=10080
         )
 
-        # Правильно получаем thread
-        thread = thread_with_msg.thread  # ← вот это важно!
-        msg = thread_with_msg.message     # первое сообщение в треде
+        thread = thread_with_msg.thread
+        msg = thread_with_msg.message
 
-        print(f"Тред создан: {thread.name} (ID: {thread.id})")
-        sys.stdout.flush()
-
-        # Пингуем боссов
+        # Пинг боссов
         ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
         await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌")
 
-        # Кнопки для админов
-        class КнопкиЗаявки(discord.ui.View):
+        # ================= Кнопки =================
+        class КнопкиЗаявки(View):
             def __init__(self, user: discord.User):
                 super().__init__(timeout=None)
                 self.user = user
@@ -129,28 +113,29 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
                         await member.add_roles(role_ok)
                 await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
                 await interaction.response.send_message(f"Заявка {self.user.mention} одобрена ✅", ephemeral=True)
+                # Добавляем тег в тред
+                await thread.add_tags([t for t in thread.available_tags if t.name=="Одобрена"])
                 self.stop()
 
             @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
             async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
                 await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
                 await interaction.response.send_message(f"Заявка {self.user.mention} отклонена ❌", ephemeral=True)
+                await thread.add_tags([t for t in thread.available_tags if t.name=="Отклонена"])
                 self.stop()
 
             @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
             async def clarify(self, interaction: discord.Interaction, button: discord.ui.Button):
                 await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
                 await interaction.response.send_message(f"Попросили уточнения у {self.user.mention} 📞", ephemeral=True)
+                await thread.add_tags([t for t in thread.available_tags if t.name=="На уточнении"])
                 self.stop()
 
-        view = КнопкиЗаявки(user=user)  # передаём user из функции
-
-        # Отправляем сообщение с кнопками
+        view = КнопкиЗаявки(user=user)
         await thread.send("Выберите действие:", view=view)
 
     except Exception as e:
         print(f"Ошибка создания треда или кнопок: {e}")
-        sys.stdout.flush()
         return
 
     # Роль "На проверке"
@@ -162,41 +147,50 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
                 роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
                 if роль_проверка:
                     await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
-                    print(f"Роль 'На проверке' выдана {discord_id}")
-                    sys.stdout.flush()
     except Exception as e:
         print(f"Ошибка выдачи роли 'На проверке': {e}")
-        sys.stdout.flush()
 
     # ЛС заявителю
     try:
         await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-        print(f"Успешно написали в ЛС {discord_id}")
-        sys.stdout.flush()
-    except Exception as e:
-        print(f"Не получилось написать в ЛС {discord_id}: {e}")
-        sys.stdout.flush()
+    except:
+        pass
 
-    # Таймер (оставил как был, но теперь работает)
+    # Таймер напоминания
     async def таймер_леночки():
-        await asyncio.sleep(24 * 3600)
+        await asyncio.sleep(24*3600)
         try:
             await thread.send("Боссики, прошло 24 часа, Леночка напоминает о заявке 😌")
         except:
             pass
-
     bot.loop.create_task(таймер_леночки())
-# ── Запуск Flask и бот ───────────────────────────────
-def run_flask():
-    port = int(os.getenv("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False)
 
-threading.Thread(target=run_flask, daemon=True).start()
+# ================= Пересылка ЛС в тред =================
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
 
-# ── Настройка бота ───────────────────────────────
+    if isinstance(message.channel, discord.DMChannel):
+        user_id = message.author.id
+        for guild in bot.guilds:
+            forum = guild.get_channel(FORUM_CHANNEL_ID)
+            if forum and hasattr(forum, "threads"):
+                async for thread in forum.threads:
+                    if not thread.archived and thread.name.startswith("Заявка"):
+                        try:
+                            embed = (await thread.fetch_message(thread.id)).embeds[0]
+                            discord_field = next((f for f in embed.fields if f.name=="Discord ID"), None)
+                            if discord_field and str(user_id) in discord_field.value:
+                                await thread.send(f"📩 Сообщение от {message.author.mention}:\n{message.content}")
+                        except:
+                            continue
+        return
+
+# ================= Бот =================
 intents = discord.Intents.default()
-intents.members = True
 intents.message_content = True
+intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
@@ -205,25 +199,55 @@ async def on_ready():
     await bot.tree.sync()
     print("Слэш-команды синхронизированы")
 
-# ── Команды и функции Леночки (оставляем старые) ───────────────────────────────
+# ================= Статус заявок =================
 @bot.command(name="статус")
 async def статус_заявок(ctx):
-    await ctx.send("Здесь будет статус заявок (можно расширить под кнопки и теги)")
+    канал = bot.get_channel(FORUM_CHANNEL_ID)
+    if not канал or канал.type != discord.ChannelType.forum:
+        await ctx.send("Форумный канал не найден 😔")
+        return
+    треды = [t async for t in канал.threads() if not t.archived]
+    ответ = f"Всего активных заявок: {len(треды)}"
+    await ctx.send(ответ)
 
+# ================= Похвала =================
 @bot.command(name="похвали")
-async def похвали(ctx, member: discord.Member = None):
-    if member is None:
-        участники = [m for m in ctx.guild.members if not m.bot and m.status != discord.Status.offline]
-        if not участники:
-            await ctx.send("Никого онлайн нет...")
-            return
-        member = random.choice(участники)
-    await ctx.send(f"{member.mention}, Леночка говорит: ты молодец! 💕")
+async def похвали(ctx, member: discord.Member=None):
+    if not member:
+        онлайн = [m for m in ctx.guild.members if not m.bot and m.status != discord.Status.offline]
+        member = random.choice(онлайн) if онлайн else ctx.author
+    await ctx.send(f"{member.mention}, Леночка думает, какой ты молодец! 💖")
 
+# ================= Настройки =================
+@bot.tree.command(name="настройки")
+@app_commands.default_permissions(administrator=True)
+async def слэш_настройки(interaction: discord.Interaction):
+    embed = discord.Embed(title="Настройки Леночки", color=0xff69b4)
+    embed.add_field(name="Форумный канал", value=f"<#{FORUM_CHANNEL_ID}>", inline=False)
+    view = discord.ui.View(timeout=180)
+    кнопка = discord.ui.Button(label="Изменить настройки", style=discord.ButtonStyle.primary)
+    async def открыть_модалку(intf):
+        await intf.response.send_modal(НастройкиМодалка())
+    кнопка.callback = открыть_модалку
+    view.add_item(кнопка)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+class НастройкиМодалка(Modal, title="Изменить настройки Леночки"):
+    канал = TextInput(label="Новый форум", placeholder="#канал или ID", required=False)
+    роль_одобрено = TextInput(label="Роль 'Одобрено'", placeholder="@Роль или ID", required=False)
+    async def on_submit(self, interaction: discord.Interaction):
+        global FORUM_CHANNEL_ID, РОЛЬ_ОДОБРЕНО
+        if self.канал.value.strip():
+            FORUM_CHANNEL_ID = int(self.канал.value.strip("<#> "))
+        if self.роль_одобрено.value.strip():
+            РОЛЬ_ОДОБРЕНО = int(self.роль_одобрено.value.strip("<@&> "))
+        await interaction.response.send_message("Настройки обновлены 💕", ephemeral=True)
+
+# ================= Flask =================
+def run_flask():
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ================= Запуск =================
 bot.run(TOKEN)
-
-
-
-
-
-
