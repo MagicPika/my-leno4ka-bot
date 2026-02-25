@@ -50,94 +50,6 @@ def принимать_заявку():
 
     bot.loop.create_task(обработать_заявку_2_0(int(discord_id), author_name, fields))
     return jsonify({"status": "ok"}), 200
-
-# ================= Обработка заявки =================
-async def обработать_заявку_2_0(discord_id: int, author_name: str, fields: list):
-    try:
-        user = await bot.fetch_user(discord_id)
-        avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
-    except:
-        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
-
-    embed = discord.Embed(
-        title=f"Заявка от {author_name}",
-        description="Ожидает решения боссов",
-        color=0x85144b,
-        timestamp=discord.utils.utcnow()
-    )
-    embed.set_thumbnail(url=avatar_url)
-
-    clean_id = str(discord_id)
-    embed.add_field(name="Discord ID", value=f"<@{clean_id}>", inline=False)
-    for f in fields:
-        embed.add_field(name=f.get("name","—"), value=f.get("value","—"), inline=f.get("inline", False))
-    embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
-
-    # Форумный канал
-    channel = bot.get_channel(FORUM_CHANNEL_ID)
-    if not channel:
-        print("Форумный канал не найден")
-        sys.stdout.flush()
-        return
-
-    try:
-        thread_with_msg = await channel.create_thread(
-            name=f"Заявка — {author_name}",
-            embed=embed,
-            auto_archive_duration=10080
-        )
-        thread = thread_with_msg.thread
-        msg = thread_with_msg.message
-
-        print(f"Тред создан: {thread.name} (ID: {thread.id})")
-        sys.stdout.flush()
-
-        ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
-        await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌")
-
-        view = КнопкиЗаявки(user=user, thread=thread)
-        await thread.send("Выберите действие:", view=view)
-
-    except Exception as e:
-        print(f"Ошибка при создании треда или отправке кнопок: {e}")
-        sys.stdout.flush()
-        return
-
-    # Роль "На проверке"
-    try:
-        guild = bot.get_guild(thread.guild.id)
-        if guild:
-            member = await guild.fetch_member(discord_id)
-            if member:
-                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-                if роль_проверка:
-                    await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
-                    print(f"Роль 'На проверке' выдана {discord_id}")
-                    sys.stdout.flush()
-    except Exception as e:
-        print(f"Ошибка выдачи роли 'На проверке': {e}")
-        sys.stdout.flush()
-
-    # ЛС заявителю
-    try:
-        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-        print(f"Успешно написали в ЛС {discord_id}")
-        sys.stdout.flush()
-    except Exception as e:
-        print(f"Не получилось написать в ЛС {discord_id}: {e}")
-        sys.stdout.flush()
-
-    # Таймер
-    async def таймер_леночки():
-        await asyncio.sleep(24*3600)
-        try:
-            await thread.send("Боссики, прошло 24 часа, Леночка напоминает о заявке 😌")
-        except:
-            pass
-
-    bot.loop.create_task(таймер_леночки())
-        # ================= Кнопки =================
-# Класс кнопок — вынесен наружу, чтобы не ломать try
 # Вынеси класс КНОПКИЗаявки сюда, перед функцией обработать_заявку_2_0
 class КнопкиЗаявки(View):
     def __init__(self, user: discord.User, thread: discord.Thread):
@@ -234,6 +146,95 @@ class КнопкиЗаявки(View):
     bot.loop.create_task(таймер_леночки())
 
 
+# ================= Обработка заявки =================
+async def обработать_заявку_2_0(discord_id: int, author_name: str, fields: list):
+    try:
+        user = await bot.fetch_user(discord_id)
+        avatar_url = user.avatar.url if user.avatar else user.default_avatar.url
+    except:
+        avatar_url = f"https://cdn.discordapp.com/embed/avatars/{discord_id % 6}.png"
+
+    embed = discord.Embed(
+        title=f"Заявка от {author_name}",
+        description="Ожидает решения боссов",
+        color=0x85144b,
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_thumbnail(url=avatar_url)
+
+    clean_id = str(discord_id)
+    embed.add_field(name="Discord ID", value=f"<@{clean_id}>", inline=False)
+    for f in fields:
+        embed.add_field(name=f.get("name","—"), value=f.get("value","—"), inline=f.get("inline", False))
+    embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
+
+    # Форумный канал
+    channel = bot.get_channel(FORUM_CHANNEL_ID)
+    if not channel:
+        print("Форумный канал не найден")
+        sys.stdout.flush()
+        return
+
+    try:
+        thread_with_msg = await channel.create_thread(
+            name=f"Заявка — {author_name}",
+            embed=embed,
+            auto_archive_duration=10080
+        )
+        thread = thread_with_msg.thread
+        msg = thread_with_msg.message
+
+        print(f"Тред создан: {thread.name} (ID: {thread.id})")
+        sys.stdout.flush()
+
+        ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
+        await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌")
+
+        view = КнопкиЗаявки(user=user, thread=thread)
+        await thread.send("Выберите действие:", view=view)
+
+    except Exception as e:
+        print(f"Ошибка при создании треда или отправке кнопок: {e}")
+        sys.stdout.flush()
+        return
+
+    # Роль "На проверке"
+    try:
+        guild = bot.get_guild(thread.guild.id)
+        if guild:
+            member = await guild.fetch_member(discord_id)
+            if member:
+                роль_проверка = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+                if роль_проверка:
+                    await member.add_roles(роль_проверка, reason="Новая заявка — на проверке")
+                    print(f"Роль 'На проверке' выдана {discord_id}")
+                    sys.stdout.flush()
+    except Exception as e:
+        print(f"Ошибка выдачи роли 'На проверке': {e}")
+        sys.stdout.flush()
+
+    # ЛС заявителю
+    try:
+        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
+        print(f"Успешно написали в ЛС {discord_id}")
+        sys.stdout.flush()
+    except Exception as e:
+        print(f"Не получилось написать в ЛС {discord_id}: {e}")
+        sys.stdout.flush()
+
+    # Таймер
+    async def таймер_леночки():
+        await asyncio.sleep(24*3600)
+        try:
+            await thread.send("Боссики, прошло 24 часа, Леночка напоминает о заявке 😌")
+        except:
+            pass
+
+    bot.loop.create_task(таймер_леночки())
+        # ================= Кнопки =================
+# Класс кнопок — вынесен наружу, чтобы не ломать try
+
+
 # ================= Бот =================
 intents = discord.Intents.default()
 intents.message_content = True
@@ -320,6 +321,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
 
