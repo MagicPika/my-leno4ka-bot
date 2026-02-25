@@ -130,6 +130,7 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
     embed.add_field(name="Discord ID", value=f"<@{clean_id}>", inline=False)
     for f in fields:
         embed.add_field(name=f.get("name","—"), value=f.get("value","—"), inline=f.get("inline", False))
+        embed.add_field(name="Заявитель", value=f"<@{discord_id}>", inline=False)
     embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
 
     channel = bot.get_channel(FORUM_CHANNEL_ID)
@@ -262,19 +263,27 @@ async def on_message(message: discord.Message):
         user_id = message.author.id
         for guild in bot.guilds:
             forum = guild.get_channel(FORUM_CHANNEL_ID)
-            if forum and hasattr(forum, "threads"):
-                async for thread in forum.threads:
+            if forum and isinstance(forum, discord.ForumChannel):
+                # forum.threads — это list, используем обычный for
+                for thread in forum.threads:
                     if not thread.archived and thread.name.startswith("Заявка"):
                         try:
-                            embed = (await thread.fetch_message(thread.id)).embeds[0]
-                            discord_field = next((f for f in embed.fields if f.name=="Discord ID"), None)
-                            if discord_field and str(user_id) in discord_field.value:
+                            # Берём первое сообщение треда
+                            first_msg = (await thread.history(limit=1, oldest_first=True).flatten())[0]
+                            embed = first_msg.embeds[0] if first_msg.embeds else None
+                            if not embed:
+                                continue
+
+                            заявитель_field = next((f for f in embed.fields if f.name == "Заявитель"), None)
+                            if заявитель_field and str(user_id) in заявитель_field.value:
                                 await thread.send(f"📩 Сообщение от {message.author.mention}:\n{message.content}")
-                        except:
+                            if str(message.author.id) != str(user_id):
+                                continue
+                        except Exception as e:
+                            print(f"Ошибка пересылки ЛС в тред {thread.name}: {e}")
                             continue
-        return
 
-
+    await bot.process_commands(message)  # если у тебя есть префиксные команды
 # ================= Flask =================
 def run_flask():
     port = int(os.getenv("PORT", 8080))
@@ -283,6 +292,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= Запуск =================
 bot.run(TOKEN)
+
 
 
 
