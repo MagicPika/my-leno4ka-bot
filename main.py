@@ -90,19 +90,19 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
         print("Форумный канал не найден")
         return
 
-# Создаем тред
-thread_with_msg = await channel.create_thread(
-    name=f"Заявка — {author_name}",
-    embed=embed,
-    auto_archive_duration=10080
-)
-
-# Получаем канал треда
-thread = thread_with_msg.thread
-
-# Пингуем боссов и отправляем кнопки
-ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
-await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌", view=view)
+    # Создаем тред
+    thread_with_msg = await channel.create_thread(
+        name=f"Заявка — {author_name}",
+        embed=embed,
+        auto_archive_duration=10080
+    )
+    
+    # Получаем канал треда
+    thread = thread_with_msg.thread
+    
+    # Пингуем боссов и отправляем кнопки
+    ping = f"<@924956705756971028> <@695943956856307744> <@&1457319043672576008>"
+    await thread.send(ping + " новая заявка! Леночка ждёт решения~ 💌", view=view)
 
     # Кнопки для админов
     class КнопкиЗаявки(discord.ui.View):
@@ -206,6 +206,7 @@ async def похвали(ctx, member: discord.Member = None):
     await ctx.send(f"{member.mention}, Леночка говорит: ты молодец! 💕")
 
 bot.run(TOKEN)
+
 
 
 
