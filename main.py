@@ -86,11 +86,11 @@ class КнопкиЗаявки(View):
 async def обработать_заявку(discord_id: int, author_name: str, fields: list):
     user = await bot.fetch_user(discord_id)
 
-    embed = discord.Embed(
-        title=f"Заявка от {author_name}",
-        color=0x85144b,
-        timestamp=discord.utils.utcnow()
-    )
+        embed = discord.Embed(
+            title=f"Заявка от {author_name}",
+            color=0x85144b,
+            timestamp=discord.utils.utcnow()
+        )
     # 👇 Discord ID отдельным полем
         embed.add_field(
             name="Discord ID",
@@ -176,5 +176,6 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= ЗАПУСК =================
 bot.run(TOKEN)
+
 
 
