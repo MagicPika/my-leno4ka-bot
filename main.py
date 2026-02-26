@@ -80,7 +80,7 @@ class КнопкиЗаявки(View):
         await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
         await self.поставить_тег("На уточнении")
         await interaction.response.send_message("Запрошено уточнение", ephemeral=True)
-        self.stop()
+
 
 # ================= СОЗДАНИЕ ЗАЯВКИ =================
 async def обработать_заявку(discord_id: int, author_name: str, fields: list):
@@ -152,6 +152,12 @@ async def on_message(message: discord.Message):
                     await thread.send(
                         f"📩 Ответ от {message.author.mention}:\n{message.content}"
                     )
+                     # Возвращаем тег "На проверке"
+                    forum = thread.parent
+                    tag = next((t for t in forum.available_tags if t.name == "На проверке"), None)
+                    if tag:
+                        await thread.edit(applied_tags=[tag])
+                
                     return
 
     await bot.process_commands(message)
@@ -179,6 +185,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= ЗАПУСК =================
 bot.run(TOKEN)
+
 
 
 
