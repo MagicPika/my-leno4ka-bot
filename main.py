@@ -86,17 +86,19 @@ class КнопкиЗаявки(View):
 async def обработать_заявку(discord_id: int, author_name: str, fields: list):
     user = await bot.fetch_user(discord_id)
 
-        embed = discord.Embed(
-            title=f"Заявка от {author_name}",
-            color=0x85144b,
-            timestamp=discord.utils.utcnow()
-        )
-    # 👇 Discord ID отдельным полем
-        embed.add_field(
-            name="Discord ID",
-            value=f"<@{discord_id}> (`{discord_id}`)",
-            inline=False
-        )
+    embed = discord.Embed(
+        title=f"Заявка от {author_name}",
+        color=0x85144b,
+        timestamp=discord.utils.utcnow()
+    )
+
+    # Discord ID отдельным полем
+    embed.add_field(
+        name="Discord ID",
+        value=f"<@{discord_id}> (`{discord_id}`)",
+        inline=False
+    )
+
     for f in fields:
         embed.add_field(
             name=f.get("name", "—"),
@@ -109,7 +111,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         return
 
     thread_with_msg = await channel.create_thread(
-        name=f"Заявка-{author_name}",
+        name=f"Заявка-{discord_id}-{author_name}",
         embed=embed,
         auto_archive_duration=10080
     )
@@ -121,6 +123,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
 
     guild = bot.get_guild(thread.guild.id)
     member = await guild.fetch_member(discord_id)
+
     роль = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
     if роль:
         await member.add_roles(роль)
@@ -176,6 +179,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= ЗАПУСК =================
 bot.run(TOKEN)
+
 
 
 
