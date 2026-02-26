@@ -104,7 +104,7 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         return
 
     thread_with_msg = await channel.create_thread(
-        name=f"Заявка-{discord_id}-{author_name}",
+        name=f"Заявка-{author_name}",
         embed=embed,
         auto_archive_duration=10080
     )
@@ -171,3 +171,4 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= ЗАПУСК =================
 bot.run(TOKEN)
+
