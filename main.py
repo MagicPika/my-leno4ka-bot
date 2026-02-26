@@ -91,7 +91,12 @@ async def обработать_заявку(discord_id: int, author_name: str, f
         color=0x85144b,
         timestamp=discord.utils.utcnow()
     )
-
+    # 👇 Discord ID отдельным полем
+        embed.add_field(
+            name="Discord ID",
+            value=f"<@{discord_id}> (`{discord_id}`)",
+            inline=False
+        )
     for f in fields:
         embed.add_field(
             name=f.get("name", "—"),
@@ -171,4 +176,5 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= ЗАПУСК =================
 bot.run(TOKEN)
+
 
