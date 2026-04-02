@@ -255,6 +255,10 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
 # ================= FLASK =================
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "OK"}), 200
+
 @app.route("/zayavka", methods=["POST"])
 def принимать_заявку():
     auth = request.headers.get("Authorization")
