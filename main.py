@@ -1,43 +1,39 @@
 import discord
 from discord.ext import commands
-import os, random, asyncio, threading
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
+import asyncio
+import random
+import os
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-FORUM_CHANNEL_ID = 1458885875692732438
-SECRET = os.getenv("SECRET")
-SECRETARY_AVATAR = "https://media.discordapp.net/attachments/1342349362600218624/1491002108848115712/ChatGPT_Image_20_._2026_._09_40_12.png?ex=69d61b6c&is=69d4c9ec&hm=149507a3a74a7ad85fd24b8384685221bd4d9395d83799eb4ce84738f2d2caf3&=&format=webp&quality=lossless&width=638&height=958"
 
 РОЛЬ_НА_ПРОВЕРКЕ = 1474320899598581791
 РОЛЬ_ОДОБРЕНО = 1457319043315929267
 
 # ================= РОФЛЫ =================
 РОФЛ_ПОЛУЧЕНО = [
-    "Ой~ новая заявочка! 💕 Леночка уже несёт боссам.",
-    "Ммм~ интересненько… Леночка читает ☕"
+    "Ой~ новая заявочка 💕 Леночка уже понесла боссам~",
+    "Ммм… интересненько, Леночка читает ☕"
 ]
 
 РОФЛ_ОДОБРЕНО = [
     "Ура~ 💕 Боссы сказали да!",
-    "Добро пожаловать~ ✨ Леночка рада!"
+    "Добро пожаловать~ Леночка рада ✨"
 ]
 
 РОФЛ_ОТКЛОНЕНО = [
-    "Ой… пока не получилось 😔",
-    "Не в этот раз, но Леночка верит в тебя 💔"
+    "Ой… отказ 😔 Но не расстраивайся",
+    "Не в этот раз 💔"
 ]
 
 РОФЛ_УТОЧНИТЬ = [
-    "Леночке нужно чуть больше информации 💕",
-    "Уточни детали, пожалуйста ✨"
+    "Нужно чуть больше информации 💕",
+    "Расскажи подробнее ✨"
 ]
 
 # ================= BOT =================
 intents = discord.Intents.default()
-intents.message_content = True
 intents.members = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -46,13 +42,34 @@ class КнопкиЗаявки(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=None)
         self.user_id = user_id
+        self.done = False
 
-    async def get_member(self, interaction):
-        return interaction.guild.get_member(self.user_id)
+    async def finish(self, interaction, text):
+        if self.done:
+            return
+        self.done = True
+
+        member = interaction.guild.get_member(self.user_id)
+
+        # отключаем кнопки
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.message.edit(view=self)
+
+        # сообщение
+        await interaction.channel.send(text)
+
+        # закрываем тред
+        await asyncio.sleep(2)
+        try:
+            await interaction.channel.edit(archived=True, locked=True)
+        except:
+            pass
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await self.get_member(interaction)
+        member = interaction.guild.get_member(self.user_id)
 
         if member:
             role_check = interaction.guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
@@ -68,14 +85,12 @@ class КнопкиЗаявки(discord.ui.View):
             except:
                 pass
 
-        await interaction.response.send_message(
-            f"✅ {member.mention} одобрен",
-            ephemeral=True
-        )
+        await interaction.response.defer()
+        await self.finish(interaction, f"✅ <@{self.user_id}> одобрен")
 
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await self.get_member(interaction)
+        member = interaction.guild.get_member(self.user_id)
 
         if member:
             try:
@@ -83,14 +98,12 @@ class КнопкиЗаявки(discord.ui.View):
             except:
                 pass
 
-        await interaction.response.send_message(
-            f"❌ {member.mention} отклонён",
-            ephemeral=True
-        )
+        await interaction.response.defer()
+        await self.finish(interaction, f"❌ <@{self.user_id}> отклонён")
 
     @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
     async def clarify(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member = await self.get_member(interaction)
+        member = interaction.guild.get_member(self.user_id)
 
         if member:
             try:
@@ -98,115 +111,63 @@ class КнопкиЗаявки(discord.ui.View):
             except:
                 pass
 
-        await interaction.response.send_message(
-            f"📞 Уточнение у {member.mention}",
-            ephemeral=True
-        )
+        await interaction.response.defer()
+        await self.finish(interaction, f"📞 <@{self.user_id}> требуется уточнение")
 
-# ================= ФОРМА =================
-@app.route("/zayavka", methods=["POST"])
-def принять():
-    if request.headers.get("Authorization") != f"Bearer {SECRET}":
-        return {"error": "no auth"}, 401
+# ================= ЛОВИМ WEBHOOK =================
+@bot.event
+async def on_thread_create(thread):
+    await asyncio.sleep(2)
 
-    data = request.json
-    bot.loop.create_task(process(data))
-    return {"ok": True}
-
-# ================= ОБРАБОТКА =================
-async def process(data):
-    discord_id = int(data["discordId"])
-    author_name = data.get("authorName", "Без имени")
-    fields = data.get("fields", [])
-
-    guild = bot.guilds[0]
-
-    # Получаем участника (для аватарки и ролей)
     try:
-        member = await guild.fetch_member(discord_id)
-        avatar = member.display_avatar.url
-        mention = member.mention
+        starter = await thread.parent.fetch_message(thread.id)
     except:
-        user = await bot.fetch_user(discord_id)
-        avatar = user.display_avatar.url
-        mention = f"<@{discord_id}>"
+        return
 
-    # ================= EMBED =================
-    embed = discord.Embed(
-        title=f"Заявка от {author_name}",
-        description="Ожидает решения боссов",
-        color=0x2b2d31
-    )
+    if not starter.embeds:
+        return
 
-    # Аватар Леночки
-    embed.set_author(
-        name="Секретутка Леночка",
-        icon_url=SECRETARY_AVATAR
-    )
+    embed = starter.embeds[0]
 
-    # Аватар пользователя справа
-    embed.set_thumbnail(url=avatar)
+    discord_id = None
 
-    # Discord ID (кликабельный)
-    embed.add_field(
-        name="Discord ID",
-        value=mention,
-        inline=False
-    )
+    for field in embed.fields:
+        if field.name == "Discord ID":
+            discord_id = field.value.replace("<@", "").replace(">", "").strip()
+            break
 
-    # Поля формы
-    for f in fields:
-        embed.add_field(
-            name=f.get("name", "—"),
-            value=f.get("value", "—"),
-            inline=False
-        )
+    if not discord_id:
+        return
 
-    # Подпись снизу
-    embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
+    discord_id = int(discord_id)
 
-    # ================= СОЗДАНИЕ ТРЕДА =================
-    channel = bot.get_channel(FORUM_CHANNEL_ID)
-    thread_data = await channel.create_thread(
-        name=f"Заявка — {author_name}",
-        content="📋 Новая заявка"
-    )
-        
-    thread = thread_data.thread
-        
-    # И ТОЛЬКО ТУТ отправляем embed
-    await thread.send(embed=embed)
+    guild = thread.guild
 
-    # ================= ПИНГ =================
+    # ПИНГ
+    await thread.send(f"<@{discord_id}> новая заявка 💌")
+
+    # КНОПКИ
     await thread.send(
-        f"{mention} <@924956705756971028> <@695943956856307744> новая заявка!"
-    )
-
-    # ================= КНОПКИ =================
-    await thread.send(
-        "Леночка ждёт решения~ 💌\n\nВыберите действие:",
+        "Выберите действие:",
         view=КнопкиЗаявки(discord_id)
     )
 
-    # ================= РОЛЬ =================
-    role = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-    if role and member:
-        await member.add_roles(role)
-
-    # ================= ЛС =================
+    # РОЛЬ "НА ПРОВЕРКЕ"
     try:
+        member = await guild.fetch_member(discord_id)
+        role = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
+        if role:
+            await member.add_roles(role)
+
+        # ЛС
         await member.send(random.choice(РОФЛ_ПОЛУЧЕНО))
     except:
         pass
+
 # ================= READY =================
 @bot.event
 async def on_ready():
-    print("Леночка запущена")
-
-# ================= FLASK =================
-def run():
-    app.run("0.0.0.0", port=10000)
-
-threading.Thread(target=run).start()
+    print("Леночка запущена 💕")
+    bot.add_view(КнопкиЗаявки(0))  # для персистентных кнопок
 
 bot.run(TOKEN)
