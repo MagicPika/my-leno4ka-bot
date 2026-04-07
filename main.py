@@ -8,6 +8,7 @@ app = Flask(__name__)
 TOKEN = os.getenv("DISCORD_TOKEN")
 FORUM_CHANNEL_ID = 1458885875692732438
 SECRET = os.getenv("SECRET")
+SECRETARY_AVATAR = "https://media.discordapp.net/attachments/1342349362600218624/1491002108848115712/ChatGPT_Image_20_._2026_._09_40_12.png?ex=69d61b6c&is=69d4c9ec&hm=149507a3a74a7ad85fd24b8384685221bd4d9395d83799eb4ce84738f2d2caf3&=&format=webp&quality=lossless&width=638&height=958"
 
 РОЛЬ_НА_ПРОВЕРКЕ = 1474320899598581791
 РОЛЬ_ОДОБРЕНО = 1457319043315929267
@@ -120,53 +121,82 @@ async def process(data):
 
     guild = bot.guilds[0]
 
+    # Получаем участника (для аватарки и ролей)
     try:
         member = await guild.fetch_member(discord_id)
         avatar = member.display_avatar.url
+        mention = member.mention
     except:
         user = await bot.fetch_user(discord_id)
         avatar = user.display_avatar.url
+        mention = f"<@{discord_id}>"
 
+    # ================= EMBED =================
     embed = discord.Embed(
-        title=f"📋 Заявка от {author_name}",
-        color=0x85144b
+        title=f"Заявка от {author_name}",
+        description="Ожидает решения боссов",
+        color=0x2b2d31
     )
 
+    # Аватар Леночки
+    embed.set_author(
+        name="Секретутка Леночка",
+        icon_url=SECRETARY_AVATAR
+    )
+
+    # Аватар пользователя справа
     embed.set_thumbnail(url=avatar)
-    embed.add_field(name="Заявитель", value=f"<@{discord_id}>", inline=False)
 
+    # Discord ID (кликабельный)
+    embed.add_field(
+        name="Discord ID",
+        value=mention,
+        inline=False
+    )
+
+    # Поля формы
     for f in fields:
-        embed.add_field(name=f["name"], value=f["value"], inline=False)
+        embed.add_field(
+            name=f.get("name", "—"),
+            value=f.get("value", "—"),
+            inline=False
+        )
 
+    # Подпись снизу
+    embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
+
+    # ================= СОЗДАНИЕ ТРЕДА =================
     channel = bot.get_channel(FORUM_CHANNEL_ID)
 
     thread_data = await channel.create_thread(
         name=f"Заявка — {author_name}",
+        content="Новая заявка",
         embed=embed
     )
 
     thread = thread_data.thread
 
-    # ПИНГ
-    await thread.send(f"<@{discord_id}> новая заявка 💌")
-
-    # КНОПКИ
+    # ================= ПИНГ =================
     await thread.send(
-        "Выбери действие:",
+        f"{mention} <@924956705756971028> <@695943956856307744> новая заявка!"
+    )
+
+    # ================= КНОПКИ =================
+    await thread.send(
+        "Леночка ждёт решения~ 💌\n\nВыберите действие:",
         view=КнопкиЗаявки(discord_id)
     )
 
-    # РОЛЬ
+    # ================= РОЛЬ =================
     role = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
     if role and member:
         await member.add_roles(role)
 
-    # ЛС
+    # ================= ЛС =================
     try:
         await member.send(random.choice(РОФЛ_ПОЛУЧЕНО))
     except:
         pass
-
 # ================= READY =================
 @bot.event
 async def on_ready():
