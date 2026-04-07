@@ -167,15 +167,15 @@ async def process(data):
 
     # ================= СОЗДАНИЕ ТРЕДА =================
     channel = bot.get_channel(FORUM_CHANNEL_ID)
-        thread_data = await channel.create_thread(
-            name=f"Заявка — {author_name}",
-            content="📋 Новая заявка"
-        )
+    thread_data = await channel.create_thread(
+        name=f"Заявка — {author_name}",
+        content="📋 Новая заявка"
+    )
         
-        thread = thread_data.thread
+    thread = thread_data.thread
         
-        # И ТОЛЬКО ТУТ отправляем embed
-        await thread.send(embed=embed)
+    # И ТОЛЬКО ТУТ отправляем embed
+    await thread.send(embed=embed)
 
     # ================= ПИНГ =================
     await thread.send(
