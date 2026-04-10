@@ -168,6 +168,6 @@ async def on_thread_create(thread):
 @bot.event
 async def on_ready():
     print("Леночка запущена 💕")
-    bot.add_view(КнопкиЗаявки(0))  # для персистентных кнопок
+    
 
 bot.run(TOKEN)
