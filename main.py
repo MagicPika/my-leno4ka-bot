@@ -130,7 +130,8 @@ async def обработать_заявку_2_0(discord_id: int, author_name: st
     embed.add_field(name="Discord ID", value=f"<@{clean_id}>", inline=False)
     for f in fields:
         embed.add_field(name=f.get("name","—"), value=f.get("value","—"), inline=f.get("inline", False))
-        embed.add_field(name="Заявитель", value=f"<@{discord_id}>", inline=False)
+        
+    embed.add_field(name="Заявитель", value=f"<@{discord_id}>", inline=False)
     embed.set_footer(text="Проверяющие: используйте кнопки ниже для решения заявки 💌")
 
     channel = bot.get_channel(FORUM_CHANNEL_ID)
