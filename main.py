@@ -169,7 +169,7 @@ async def on_thread_create(thread):
         pass
 
 # ================= READY =================
-@bot.event
+@app.route("/")
 def home():
     return "Леночка работает 💕"
 
@@ -177,6 +177,4 @@ def run():
     app.run(host="0.0.0.0", port=10000)
 
 threading.Thread(target=run).start()
-    
-
 bot.run(TOKEN)
