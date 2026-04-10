@@ -170,7 +170,6 @@ async def on_thread_create(thread):
 
 # ================= READY =================
 @bot.event
-@app.route("/")
 def home():
     return "Леночка работает 💕"
 
