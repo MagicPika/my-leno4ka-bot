@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import os, random, asyncio, threading
 from flask import Flask, request, jsonify
-
+а
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("DISCORD_TOKEN")
 SECRET = "2122428Matros"
@@ -171,7 +171,6 @@ async def обработать_заявку(discord_id, author_name, fields):
 
     thread_data = await channel.create_thread(
         name=f"Заявка — {author_name}",
-        content="📋 Новая заявка",
         auto_archive_duration=10080
     )
 
