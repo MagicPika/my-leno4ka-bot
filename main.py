@@ -171,6 +171,7 @@ async def обработать_заявку(discord_id, author_name, fields):
 
     thread_data = await channel.create_thread(
         name=f"Заявка — {author_name}",
+        content="📋 Новая заявка",
         auto_archive_duration=10080
     )
 
