@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import os, random, asyncio, threading
 from flask import Flask, request, jsonify
-а
+
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("DISCORD_TOKEN")
 SECRET = "2122428Matros"
