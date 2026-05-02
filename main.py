@@ -8,222 +8,267 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 SECRET = "2122428Matros"
 
 FORUM_CHANNEL_ID = 1458885875692732438
-LOG_CHANNEL_ID = 1286768393478733887  # поменяй
+REVIEWER_ROLE_ID = 1457319043672576008
 
 РОЛЬ_НА_ПРОВЕРКЕ = 1474320899598581791
 РОЛЬ_ОДОБРЕНО = 1457319043315929267
 
+# ================= СОСТОЯНИЕ =================
+applications = {}       # user_id -> данные
 active_applications = set()
+application_meta = {}   # уровни злости
+npc_memory = {}         # память леночки
 
 # ================= РОФЛЫ =================
-РОФЛ_ПОЛУЧЕНО = ["Леночка получила заявку 💌"]
-РОФЛ_ОДОБРЕНО = ["Одобрено 💕"]
-РОФЛ_ОТКЛОНЕНО = ["Отказ 😔"]
-РОФЛ_УТОЧНИТЬ = ["Нужно уточнение 📞"]
+РОФЛ_ПОЛУЧЕНО = [
+    "Ооо~ заявочка пришла 💕",
+    "Леночка приняла заявку и уже несёт наверх~"
+]
 
-# ================= BOT =================
+РОФЛ_ОДОБРЕНО = ["Добро пожаловать 💕"]
+РОФЛ_ОТКЛОНЕНО = ["Отказ 😔"]
+
+# ================= ЗЛАЯ ЛЕНОЧКА =================
+ЛЕНОЧКА_ЗЛАЯ = {
+    0: ["Заявочка лежит… 💅"],
+    1: ["Заявка уже висит 👀"],
+    2: ["Кто игнорит заявки?"],
+    3: ["Леночка злится 😠"],
+    4: ["ВСЁ. Это уже бардак"]
+}
+
+# ================= БОТ =================
 intents = discord.Intents.default()
 intents.members = True
-intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ================= FLASK =================
 app = Flask(__name__)
 
 @app.route("/zayavka", methods=["POST"])
-def принимать_заявку():
+def zayavka():
     if request.headers.get("Authorization") != f"Bearer {SECRET}":
         return jsonify({"error": "bad key"}), 401
 
-    data = request.json or {}
-    discord_id = int(data.get("discordId"))
+    data = request.json
+    discord_id = int(data["discordId"])
     author_name = data.get("authorName", "Без имени")
     fields = data.get("fields", [])
 
     bot.loop.create_task(обработать_заявку(discord_id, author_name, fields))
-    return jsonify({"ok": True})
+    return {"ok": True}
+
+# ================= NPC =================
+def get_npc(uid):
+    if uid not in npc_memory:
+        npc_memory[uid] = {"rep": 0}
+    return npc_memory[uid]
+
+def npc_phrase(uid, type_):
+    rep = get_npc(uid)["rep"]
+
+    if type_ == "take":
+        return "О, работаешь 😌" if rep >= 0 else "Ну наконец-то"
+    if type_ == "ignore":
+        return "Ты игноришь 😈" if rep < 0 else "Не тяни"
+    if type_ == "approve":
+        return "Вот это хорошо 💕"
+    return ""
+
+# ================= УРОВЕНЬ ЗЛОСТИ =================
+def get_level(uid):
+    meta = application_meta.get(uid)
+    if not meta:
+        return 0
+
+    t = asyncio.get_event_loop().time() - meta["time"]
+
+    if t > 7200: return 4
+    if t > 3600: return 3
+    if t > 1800: return 2
+    if t > 600: return 1
+    return 0
 
 # ================= КНОПКИ =================
-class Кнопки(discord.ui.View):
-    def __init__(self, user, thread, message):
+class View(discord.ui.View):
+    def __init__(self, user, thread, msg):
         super().__init__(timeout=None)
         self.user = user
         self.thread = thread
-        self.message = message
-        self.ответственный = None
+        self.msg = msg
+        self.owner = None
 
-    def check_owner(self, interaction):
-        return self.ответственный is None or interaction.user.id == self.ответственный
+    async def update(self, status, reviewer=None):
+        emb = self.msg.embeds[0]
+        emb.set_field_at(0, name="Статус", value=status)
+        if reviewer:
+            emb.set_footer(text=f"Ответственный: {reviewer}")
+        await self.msg.edit(embed=emb)
 
-    async def check(self, interaction):
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ Нет прав", ephemeral=True)
-            return False
-        if not self.check_owner(interaction):
-            await interaction.response.send_message("❌ Уже занято", ephemeral=True)
-            return False
-        return True
+    @discord.ui.button(label="👤 Взять", style=discord.ButtonStyle.primary)
+    async def take(self, i: discord.Interaction, _):
+        self.owner = i.user.id
+        applications[self.user.id]["status"] = "В работе"
+        applications[self.user.id]["reviewer"] = i.user.id
 
-    async def update_status(self, статус, кто=None):
-        embed = self.message.embeds[0]
-        embed.set_field_at(0, name="Статус", value=статус, inline=False)
-        if кто:
-            embed.set_footer(text=f"Ответственный: {кто}")
-        await self.message.edit(embed=embed)
+        get_npc(i.user.id)["rep"] += 1
 
-    async def finish(self, interaction, текст, цвет):
-        for i in self.children:
-            i.disabled = True
+        await i.response.send_message("Взял", ephemeral=True)
+        await self.update("🟡 В работе", i.user)
 
-        await interaction.message.edit(view=self)
+    @discord.ui.button(label="🔁 Передать", style=discord.ButtonStyle.secondary)
+    async def transfer(self, i, _):
+        if self.owner != i.user.id:
+            return await i.response.send_message("Не ты", ephemeral=True)
 
-        embed = self.message.embeds[0]
-        embed.title = "Заявка рассмотрена"
-        embed.description = текст
-        embed.color = цвет
-        embed.set_footer(text=f"Решил: {interaction.user}")
+        self.owner = None
+        applications[self.user.id]["reviewer"] = None
 
-        await self.message.edit(embed=embed)
+        await i.response.send_message("Передано", ephemeral=True)
+        await self.update("🟣 Ожидает")
 
-        try:
-            if "одобрен" in текст:
-                await self.thread.edit(name=f"✅ Одобрено — {self.user.name}")
-            elif "отклонён" in текст:
-                await self.thread.edit(name=f"❌ Отказ — {self.user.name}")
-            elif "уточнение" in текст:
-                await self.thread.edit(name=f"📞 Уточнение — {self.user.name}")
-        except:
-            pass
+    @discord.ui.button(label="✅", style=discord.ButtonStyle.success)
+    async def approve(self, i, _):
+        member = i.guild.get_member(self.user.id)
 
-        active_applications.discard(self.user.id)
+        if member:
+            role = i.guild.get_role(РОЛЬ_ОДОБРЕНО)
+            if role:
+                await member.add_roles(role)
+
+        await self.finish(i, "Одобрено", 0x2ecc71)
+
+    @discord.ui.button(label="❌", style=discord.ButtonStyle.danger)
+    async def decline(self, i, _):
+        await self.finish(i, "Отклонено", 0xe74c3c)
+
+    async def finish(self, i, text, color):
+        for c in self.children:
+            c.disabled = True
+
+        emb = self.msg.embeds[0]
+        emb.title = "Заявка закрыта"
+        emb.description = text
+        emb.color = color
+
+        await self.msg.edit(embed=emb, view=self)
 
         await asyncio.sleep(2)
         await self.thread.edit(archived=True, locked=True)
 
-    @discord.ui.button(label="👤 Взять", style=discord.ButtonStyle.primary)
-    async def take(self, interaction: discord.Interaction, button):
-        if not await self.check(interaction):
-            return
-        self.ответственный = interaction.user.id
-        await interaction.response.send_message("Взял заявку", ephemeral=True)
-        await self.update_status("🟡 В работе", interaction.user)
-
-    @discord.ui.button(label="🔁 Передать", style=discord.ButtonStyle.secondary)
-    async def transfer(self, interaction: discord.Interaction, button):
-        if self.ответственный != interaction.user.id:
-            await interaction.response.send_message("❌ Не ты ответственный", ephemeral=True)
-            return
-        self.ответственный = None
-        await interaction.response.send_message("Передано", ephemeral=True)
-        await self.update_status("🟣 Ожидает")
-
-    @discord.ui.button(label="✅", style=discord.ButtonStyle.success)
-    async def approve(self, interaction: discord.Interaction, button):
-        if not await self.check(interaction):
-            return
-
-        member = interaction.guild.get_member(self.user.id)
-        if member:
-            role = interaction.guild.get_role(РОЛЬ_ОДОБРЕНО)
-            if role:
-                await member.add_roles(role)
-            try:
-                await member.send(random.choice(РОФЛ_ОДОБРЕНО))
-            except:
-                pass
-
-        await interaction.response.defer()
-        await self.finish(interaction, f"✅ {self.user.mention} одобрен", 0x2ecc71)
-
-    @discord.ui.button(label="❌", style=discord.ButtonStyle.danger)
-    async def decline(self, interaction: discord.Interaction, button):
-        if not await self.check(interaction):
-            return
-        try:
-            await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
-        except:
-            pass
-        await interaction.response.defer()
-        await self.finish(interaction, f"❌ {self.user.mention} отклонён", 0xe74c3c)
-
-    @discord.ui.button(label="📞", style=discord.ButtonStyle.secondary)
-    async def clarify(self, interaction: discord.Interaction, button):
-        if not await self.check(interaction):
-            return
-        try:
-            await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
-        except:
-            pass
-        await interaction.response.defer()
-        await self.finish(interaction, f"📞 {self.user.mention} уточнение", 0xf1c40f)
+        applications.pop(self.user.id, None)
+        application_meta.pop(self.user.id, None)
 
 # ================= ОБРАБОТКА =================
-async def обработать_заявку(discord_id, author_name, fields):
+async def обработать_заявку(uid, name, fields):
 
-    if discord_id in active_applications:
+    if uid in active_applications:
         return
-    active_applications.add(discord_id)
+
+    active_applications.add(uid)
 
     channel = bot.get_channel(FORUM_CHANNEL_ID)
-    if not channel:
-        return
-
     thread_data = await channel.create_thread(
-        name=f"Заявка — {author_name}",
+        name=f"Заявка — {name}",
         content="📋 Новая заявка",
         auto_archive_duration=10080
     )
 
     thread = thread_data.thread
-    guild = thread.guild
 
+    guild = thread.guild
     try:
-        member = await guild.fetch_member(discord_id)
+        member = await guild.fetch_member(uid)
     except:
         member = None
 
-    if member is None:
-        await thread.send(f"❌ <@{discord_id}> не на сервере")
+    if not member:
+        await thread.send("❌ Не на сервере")
         await asyncio.sleep(2)
         await thread.edit(archived=True, locked=True)
-        active_applications.discard(discord_id)
         return
 
-    user = await bot.fetch_user(discord_id)
+    user = await bot.fetch_user(uid)
+    avatar = user.display_avatar.url
 
-    avatar = user.avatar.url if user.avatar else user.default_avatar.url
-
-    embed = discord.Embed(
-        title=f"Заявка от {author_name}",
-        color=0x85144b,
-        timestamp=discord.utils.utcnow()
-    )
-
+    embed = discord.Embed(title=f"Заявка {name}", color=0x85144b)
     embed.set_thumbnail(url=avatar)
     embed.add_field(name="Статус", value="🟣 Ожидает", inline=False)
-    embed.add_field(name="Заявитель", value=f"<@{discord_id}>", inline=False)
+    embed.add_field(name="Заявитель", value=f"<@{uid}>", inline=False)
 
     for f in fields:
-        embed.add_field(name=f.get("name"), value=f.get("value"), inline=False)
+        embed.add_field(name=f["name"], value=f["value"], inline=False)
 
     msg = await thread.send(embed=embed)
+    await thread.send("Действия:", view=View(user, thread, msg))
 
-    await thread.send("Выберите действие:", view=Кнопки(user, thread, msg))
+    applications[uid] = {
+        "thread_id": thread.id,
+        "status": "Ожидает",
+        "reviewer": None
+    }
 
-    role = guild.get_role(РОЛЬ_НА_ПРОВЕРКЕ)
-    if role:
-        await member.add_roles(role)
+    application_meta[uid] = {
+        "time": asyncio.get_event_loop().time(),
+        "level": 0
+    }
 
     try:
         await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
     except:
         pass
 
-# ================= RUN =================
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
+# ================= SLA =================
+async def watchdog():
+    await bot.wait_until_ready()
 
-threading.Thread(target=run_flask).start()
+    while True:
+        for uid, data in applications.items():
+            thread = bot.get_channel(data["thread_id"])
+            if not thread or thread.archived:
+                continue
+
+            lvl = get_level(uid)
+            old = application_meta[uid]["level"]
+
+            if lvl > old:
+                application_meta[uid]["level"] = lvl
+
+                txt = random.choice(ЛЕНОЧКА_ЗЛАЯ[lvl])
+                reviewer = data["reviewer"]
+
+                if reviewer:
+                    txt += f"\n👉 <@{reviewer}>"
+                else:
+                    txt += f"\n👉 <@&{REVIEWER_ROLE_ID}>"
+
+                await thread.send(txt)
+
+        await asyncio.sleep(600)
+
+# ================= ПАНЕЛЬ =================
+@bot.command()
+async def панель(ctx):
+    emb = discord.Embed(title="Панель заявок")
+
+    for uid, data in applications.items():
+        emb.add_field(
+            name=f"<@{uid}>",
+            value=f"{data['status']}",
+            inline=False
+        )
+
+    await ctx.send(embed=emb)
+
+# ================= ЗАПУСК =================
+def run():
+    app.run("0.0.0.0", port=10000)
+
+threading.Thread(target=run).start()
+
+@bot.event
+async def on_ready():
+    print("Бот запущен")
+    bot.loop.create_task(watchdog())
 
 bot.run(TOKEN)
