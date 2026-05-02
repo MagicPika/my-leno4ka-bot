@@ -1,46 +1,20 @@
 import discord
 from discord.ext import commands
-import os, random, asyncio, threading
+import os, random, asyncio, json, threading
 from flask import Flask, request, jsonify
 
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("DISCORD_TOKEN")
-SECRET = "2122428Matros"
 
 FORUM_CHANNEL_ID = 1458885875692732438
-REVIEWER_ROLE_ID = 1457319043672576008
+SECRET = "2122428Matros"
 
-РОЛЬ_НА_ПРОВЕРКЕ = 1474320899598581791
-РОЛЬ_ОДОБРЕНО = 1457319043315929267
+ROLE_CHECK = 1474320899598581791
+ROLE_APPROVED = 1457319043315929267
 
-# ================= СОСТОЯНИЕ =================
-applications = {}       # user_id -> данные
-active_applications = set()
-application_meta = {}   # уровни злости
-npc_memory = {}         # память леночки
+NPC_CHANNELS = []  # если пусто → все каналы кроме заявок
 
-# ================= РОФЛЫ =================
-РОФЛ_ПОЛУЧЕНО = [
-    "Ооо~ заявочка пришла 💕",
-    "Леночка приняла заявку и уже несёт наверх~"
-]
-
-РОФЛ_ОДОБРЕНО = ["Добро пожаловать 💕"]
-РОФЛ_ОТКЛОНЕНО = ["Отказ 😔"]
-
-# ================= ЗЛАЯ ЛЕНОЧКА =================
-ЛЕНОЧКА_ЗЛАЯ = {
-    0: ["Заявочка лежит… 💅"],
-    1: ["Заявка уже висит 👀"],
-    2: ["Кто игнорит заявки?"],
-    3: ["Леночка злится 😠"],
-    4: ["ВСЁ. Это уже бардак"]
-}
-
-# ================= БОТ =================
-intents = discord.Intents.default()
-intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+NPC_FILE = "npc.json"
 
 # ================= FLASK =================
 app = Flask(__name__)
@@ -52,223 +26,126 @@ def zayavka():
 
     data = request.json
     discord_id = int(data["discordId"])
-    author_name = data.get("authorName", "Без имени")
+    author = data.get("authorName", "Без имени")
     fields = data.get("fields", [])
 
-    bot.loop.create_task(обработать_заявку(discord_id, author_name, fields))
-    return {"ok": True}
+    bot.loop.create_task(process_app(discord_id, author, fields))
+    return jsonify({"ok": True})
 
 # ================= NPC =================
-def get_npc(uid):
-    if uid not in npc_memory:
-        npc_memory[uid] = {"rep": 0}
-    return npc_memory[uid]
+npc = {
+    "users": {},
+    "mood": 0,
+    "energy": 5
+}
 
-def npc_phrase(uid, type_):
-    rep = get_npc(uid)["rep"]
+def save():
+    with open(NPC_FILE, "w") as f:
+        json.dump(npc, f)
 
-    if type_ == "take":
-        return "О, работаешь 😌" if rep >= 0 else "Ну наконец-то"
-    if type_ == "ignore":
-        return "Ты игноришь 😈" if rep < 0 else "Не тяни"
-    if type_ == "approve":
-        return "Вот это хорошо 💕"
-    return ""
+def load():
+    global npc
+    try:
+        with open(NPC_FILE) as f:
+            npc = json.load(f)
+    except:
+        pass
 
-# ================= УРОВЕНЬ ЗЛОСТИ =================
-def get_level(uid):
-    meta = application_meta.get(uid)
-    if not meta:
-        return 0
+def get_user(uid):
+    if str(uid) not in npc["users"]:
+        npc["users"][str(uid)] = {"rep": 0}
+    return npc["users"][str(uid)]
 
-    t = asyncio.get_event_loop().time() - meta["time"]
-
-    if t > 7200: return 4
-    if t > 3600: return 3
-    if t > 1800: return 2
-    if t > 600: return 1
-    return 0
+# ================= БОТ =================
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ================= КНОПКИ =================
-class View(discord.ui.View):
-    def __init__(self, user, thread, msg):
+class AppView(discord.ui.View):
+    def __init__(self, user):
         super().__init__(timeout=None)
         self.user = user
-        self.thread = thread
-        self.msg = msg
-        self.owner = None
 
-    async def update(self, status, reviewer=None):
-        emb = self.msg.embeds[0]
-        emb.set_field_at(0, name="Статус", value=status)
-        if reviewer:
-            emb.set_footer(text=f"Ответственный: {reviewer}")
-        await self.msg.edit(embed=emb)
+    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
+    async def ok(self, interaction, button):
+        await self.user.send("Твоя заявка одобрена 💕")
+        await interaction.response.send_message("OK", ephemeral=True)
 
-    @discord.ui.button(label="👤 Взять", style=discord.ButtonStyle.primary)
-    async def take(self, i: discord.Interaction, _):
-        self.owner = i.user.id
-        applications[self.user.id]["status"] = "В работе"
-        applications[self.user.id]["reviewer"] = i.user.id
+    @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.danger)
+    async def no(self, interaction, button):
+        await self.user.send("Твоя заявка отклонена 😔")
+        await interaction.response.send_message("NO", ephemeral=True)
 
-        get_npc(i.user.id)["rep"] += 1
+# ================= ЗАЯВКА =================
+async def process_app(uid, name, fields):
+    user = await bot.fetch_user(uid)
 
-        await i.response.send_message("Взял", ephemeral=True)
-        await self.update("🟡 В работе", i.user)
-
-    @discord.ui.button(label="🔁 Передать", style=discord.ButtonStyle.secondary)
-    async def transfer(self, i, _):
-        if self.owner != i.user.id:
-            return await i.response.send_message("Не ты", ephemeral=True)
-
-        self.owner = None
-        applications[self.user.id]["reviewer"] = None
-
-        await i.response.send_message("Передано", ephemeral=True)
-        await self.update("🟣 Ожидает")
-
-    @discord.ui.button(label="✅", style=discord.ButtonStyle.success)
-    async def approve(self, i, _):
-        member = i.guild.get_member(self.user.id)
-
-        if member:
-            role = i.guild.get_role(РОЛЬ_ОДОБРЕНО)
-            if role:
-                await member.add_roles(role)
-
-        await self.finish(i, "Одобрено", 0x2ecc71)
-
-    @discord.ui.button(label="❌", style=discord.ButtonStyle.danger)
-    async def decline(self, i, _):
-        await self.finish(i, "Отклонено", 0xe74c3c)
-
-    async def finish(self, i, text, color):
-        for c in self.children:
-            c.disabled = True
-
-        emb = self.msg.embeds[0]
-        emb.title = "Заявка закрыта"
-        emb.description = text
-        emb.color = color
-
-        await self.msg.edit(embed=emb, view=self)
-
-        await asyncio.sleep(2)
-        await self.thread.edit(archived=True, locked=True)
-
-        applications.pop(self.user.id, None)
-        application_meta.pop(self.user.id, None)
-
-# ================= ОБРАБОТКА =================
-async def обработать_заявку(uid, name, fields):
-
-    if uid in active_applications:
-        return
-
-    active_applications.add(uid)
-
-    channel = bot.get_channel(FORUM_CHANNEL_ID)
-    thread_data = await channel.create_thread(
-        name=f"Заявка — {name}",
-        content="📋 Новая заявка",
-        auto_archive_duration=10080
+    embed = discord.Embed(
+        title=f"Заявка {name}",
+        color=0xff69b4
     )
 
-    thread = thread_data.thread
-
-    guild = thread.guild
-    try:
-        member = await guild.fetch_member(uid)
-    except:
-        member = None
-
-    if not member:
-        await thread.send("❌ Не на сервере")
-        await asyncio.sleep(2)
-        await thread.edit(archived=True, locked=True)
-        return
-
-    user = await bot.fetch_user(uid)
-    avatar = user.display_avatar.url
-
-    embed = discord.Embed(title=f"Заявка {name}", color=0x85144b)
-    embed.set_thumbnail(url=avatar)
-    embed.add_field(name="Статус", value="🟣 Ожидает", inline=False)
-    embed.add_field(name="Заявитель", value=f"<@{uid}>", inline=False)
+    embed.add_field(name="Пользователь", value=f"<@{uid}>", inline=False)
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"], inline=False)
 
-    msg = await thread.send(embed=embed)
-    await thread.send("Действия:", view=View(user, thread, msg))
+    channel = bot.get_channel(FORUM_CHANNEL_ID)
 
-    applications[uid] = {
-        "thread_id": thread.id,
-        "status": "Ожидает",
-        "reviewer": None
-    }
+    thread = await channel.create_thread(
+        name=f"{name}",
+        embed=embed
+    )
 
-    application_meta[uid] = {
-        "time": asyncio.get_event_loop().time(),
-        "level": 0
-    }
+    await thread.thread.send("Новая заявка")
+    await thread.thread.send(view=AppView(user))
 
-    try:
-        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-    except:
-        pass
+# ================= NPC ЛОГИКА =================
+def is_app_channel(channel):
+    return isinstance(channel, discord.Thread)
 
-# ================= SLA =================
-async def watchdog():
-    await bot.wait_until_ready()
+def npc_reply(uid, text):
+    rep = get_user(uid)["rep"]
 
-    while True:
-        for uid, data in applications.items():
-            thread = bot.get_channel(data["thread_id"])
-            if not thread or thread.archived:
-                continue
+    if "привет" in text:
+        return "Привет 💕" if rep >= 1 else "Привет"
 
-            lvl = get_level(uid)
-            old = application_meta[uid]["level"]
+    if rep < -2:
+        return "Не хочу с тобой говорить 😈"
 
-            if lvl > old:
-                application_meta[uid]["level"] = lvl
+    return random.choice(["Ммм?", "Слушаю", "Говори"])
 
-                txt = random.choice(ЛЕНОЧКА_ЗЛАЯ[lvl])
-                reviewer = data["reviewer"]
+# ================= MESSAGE =================
+@bot.event
+async def on_message(msg):
+    if msg.author.bot:
+        return
 
-                if reviewer:
-                    txt += f"\n👉 <@{reviewer}>"
-                else:
-                    txt += f"\n👉 <@&{REVIEWER_ROLE_ID}>"
+    # заявки не трогаем
+    if is_app_channel(msg.channel):
+        return
 
-                await thread.send(txt)
+    # фильтр каналов
+    if NPC_CHANNELS and msg.channel.id not in NPC_CHANNELS:
+        return
 
-        await asyncio.sleep(600)
+    if "леночка" in msg.content.lower():
+        reply = npc_reply(msg.author.id, msg.content.lower())
+        await msg.reply(reply)
 
-# ================= ПАНЕЛЬ =================
-@bot.command()
-async def панель(ctx):
-    emb = discord.Embed(title="Панель заявок")
+    await bot.process_commands(msg)
 
-    for uid, data in applications.items():
-        emb.add_field(
-            name=f"<@{uid}>",
-            value=f"{data['status']}",
-            inline=False
-        )
-
-    await ctx.send(embed=emb)
-
-# ================= ЗАПУСК =================
-def run():
-    app.run("0.0.0.0", port=10000)
-
-threading.Thread(target=run).start()
-
+# ================= READY =================
 @bot.event
 async def on_ready():
     print("Бот запущен")
-    bot.loop.create_task(watchdog())
+    load()
 
+# ================= FLASK RUN =================
+def run():
+    app.run(host="0.0.0.0", port=8080)
+
+threading.Thread(target=run).start()
+
+# ================= START =================
 bot.run(TOKEN)
