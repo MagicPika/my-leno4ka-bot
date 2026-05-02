@@ -13,8 +13,37 @@ ROLE_CHECK = 1474320899598581791
 ROLE_APPROVED = 1457319043315929267
 
 NPC_CHANNELS = []  # если пусто → все каналы кроме заявок
-
 NPC_FILE = "npc.json"
+
+# ================= РЕПЛИКИ =================
+РОФЛ_ПОЛУЧЕНО = [
+    "Ооо, свеженькая заявОчка~ 💕 Леночка уже несёт наверх!",
+    "Привет~ Я увидела твою анкету 💌 Сейчас покажу боссам",
+    "Заявка получена 😌 Леночка держит её под контролем",
+]
+
+РОФЛ_ОДОБРЕНО = [
+    "Урааа~ 💕 Тебя приняли!",
+    "Боссы сказали ДА 😘",
+    "Одобрено~ Леночка довольна 💖",
+]
+
+РОФЛ_ОТКЛОНЕНО = [
+    "Ой… отказ 😔",
+    "В этот раз не получилось…",
+    "Боссы сказали нет 😈",
+]
+
+РОФЛ_УТОЧНИТЬ = [
+    "Нужно уточнение 📞",
+    "Допиши подробнее 💕",
+]
+
+РОФЛ_ОБЩЕНИЕ = [
+    "Ммм? 💅",
+    "Слушаю 👀",
+    "Говори~",
+]
 
 # ================= FLASK =================
 app = Flask(__name__)
@@ -33,15 +62,7 @@ def zayavka():
     return jsonify({"ok": True})
 
 # ================= NPC =================
-npc = {
-    "users": {},
-    "mood": 0,
-    "energy": 5
-}
-
-def save():
-    with open(NPC_FILE, "w") as f:
-        json.dump(npc, f)
+npc = {"users": {}}
 
 def load():
     global npc
@@ -50,6 +71,10 @@ def load():
             npc = json.load(f)
     except:
         pass
+
+def save():
+    with open(NPC_FILE, "w") as f:
+        json.dump(npc, f)
 
 def get_user(uid):
     if str(uid) not in npc["users"]:
@@ -68,20 +93,25 @@ class AppView(discord.ui.View):
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def ok(self, interaction, button):
-        await self.user.send("Твоя заявка одобрена 💕")
-        await interaction.response.send_message("OK", ephemeral=True)
+        await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
+        await interaction.response.send_message("Одобрено", ephemeral=True)
 
     @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.danger)
     async def no(self, interaction, button):
-        await self.user.send("Твоя заявка отклонена 😔")
-        await interaction.response.send_message("NO", ephemeral=True)
+        await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
+        await interaction.response.send_message("Отклонено", ephemeral=True)
+
+    @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
+    async def call(self, interaction, button):
+        await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
+        await interaction.response.send_message("Запрошено уточнение", ephemeral=True)
 
 # ================= ЗАЯВКА =================
 async def process_app(uid, name, fields):
     user = await bot.fetch_user(uid)
 
     embed = discord.Embed(
-        title=f"Заявка {name}",
+        title=f"Заявка — {name}",
         color=0xff69b4
     )
 
@@ -97,10 +127,16 @@ async def process_app(uid, name, fields):
         embed=embed
     )
 
-    await thread.thread.send("Новая заявка")
+    await thread.thread.send("Новая заявка 👀")
     await thread.thread.send(view=AppView(user))
 
-# ================= NPC ЛОГИКА =================
+    # ЛС
+    try:
+        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
+    except:
+        pass
+
+# ================= NPC =================
 def is_app_channel(channel):
     return isinstance(channel, discord.Thread)
 
@@ -108,12 +144,12 @@ def npc_reply(uid, text):
     rep = get_user(uid)["rep"]
 
     if "привет" in text:
-        return "Привет 💕" if rep >= 1 else "Привет"
+        return "Приветик~ 💕" if rep >= 1 else "Привет"
 
-    if rep < -2:
-        return "Не хочу с тобой говорить 😈"
+    if rep <= -2:
+        return "Я с тобой не разговариваю 😈"
 
-    return random.choice(["Ммм?", "Слушаю", "Говори"])
+    return random.choice(РОФЛ_ОБЩЕНИЕ)
 
 # ================= MESSAGE =================
 @bot.event
@@ -138,10 +174,10 @@ async def on_message(msg):
 # ================= READY =================
 @bot.event
 async def on_ready():
-    print("Бот запущен")
+    print(f"Леночка онлайн → {bot.user}")
     load()
 
-# ================= FLASK RUN =================
+# ================= FLASK =================
 def run():
     app.run(host="0.0.0.0", port=8080)
 
