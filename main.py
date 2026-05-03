@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
-import os, random, asyncio, json, threading
-from flask import Flask, request, jsonify
+import os, random, asyncio, threading
+from flask import Flask, request, jsonify, render_template_string
 
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -9,41 +9,95 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 FORUM_CHANNEL_ID = 1458885875692732438
 SECRET = "2122428Matros"
 
+ADMIN_TOKEN = "admin123"  # пароль для веб-панели (поменяй)
+
 ARMY_SITE = "https://your-site.ru"
 ARMY_DISCORD = "https://discord.gg/yourinvite"
 
-NPC_CHANNELS = []  # пусто = все каналы кроме заявок
+COLOR_WAIT = 0x85144b
+COLOR_OK = 0x2ecc71
+COLOR_NO = 0xe74c3c
+COLOR_CALL = 0xf1c40f
+COLOR_TIMEOUT = 0x95a5a6
 
-# ================= ФРАЗЫ =================
-РОФЛ_ПОЛУЧЕНО = [
-    "Ооо, свеженькая заявОчка~ 💕",
-    "Заявка получена, не пропадай 😌",
-]
+REMIND_AFTER = 12 * 3600
+TIMEOUT_AFTER = 24 * 3600
 
-РОФЛ_ОДОБРЕНО = [
-    "Ты принят 💕",
-    "Добро пожаловать 😘",
-]
-
-РОФЛ_ОТКЛОНЕНО = [
-    "Отказ 😔",
-    "В этот раз нет…",
-]
-
-РОФЛ_УТОЧНИТЬ = [
-    "Нужно уточнение 📞",
-    "Напиши подробнее",
-]
-
-РОФЛ_ОБЩЕНИЕ = [
-    "Ммм?",
-    "Слушаю",
-    "Говори~",
-]
+applications = {}
 
 # ================= FLASK =================
 app = Flask(__name__)
 
+# ---------- CRM HTML ----------
+HTML = """
+<html>
+<head>
+<title>Леночка CRM</title>
+<style>
+body { font-family: Arial; background:#111; color:white; }
+.card {
+  background:#1e1e1e; padding:15px; margin:10px;
+  border-radius:10px;
+}
+button {
+  margin:5px; padding:5px 10px;
+}
+</style>
+</head>
+<body>
+
+<h1>📊 Панель заявок</h1>
+
+{% for id, a in apps.items() %}
+<div class="card">
+<b>ID:</b> {{id}}<br>
+<b>Статус:</b> {{a["status"]}}<br>
+<b>Взял:</b> {{a["taken_by"]}}<br>
+
+<button onclick="act('{{id}}','take')">Взять</button>
+<button onclick="act('{{id}}','ok')">Одобрить</button>
+<button onclick="act('{{id}}','no')">Отказать</button>
+</div>
+{% endfor %}
+
+<script>
+function act(id, action){
+ fetch("/action",{
+   method:"POST",
+   headers:{
+     "Content-Type":"application/json",
+     "Authorization":"Bearer {{token}}"
+   },
+   body:JSON.stringify({id:id,action:action})
+ }).then(()=>location.reload())
+}
+</script>
+
+</body>
+</html>
+"""
+
+# ---------- API ----------
+@app.route("/")
+def panel():
+    token = request.args.get("token")
+    if token != ADMIN_TOKEN:
+        return "Нет доступа"
+    return render_template_string(HTML, apps=applications, token=ADMIN_TOKEN)
+
+@app.route("/action", methods=["POST"])
+def action():
+    if request.headers.get("Authorization") != f"Bearer {ADMIN_TOKEN}":
+        return "no", 403
+
+    data = request.json
+    tid = int(data["id"])
+    act = data["action"]
+
+    bot.loop.create_task(web_action(tid, act))
+    return "ok"
+
+# ---------- ЗАЯВКА ----------
 @app.route("/zayavka", methods=["POST"])
 def zayavka():
     if request.headers.get("Authorization") != f"Bearer {SECRET}":
@@ -61,136 +115,81 @@ def zayavka():
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================= МЕНЮ =================
-class ArmyMenuView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-
-        self.add_item(discord.ui.Button(label="🌐 Сайт", url=ARMY_SITE))
-        self.add_item(discord.ui.Button(label="💬 Discord", url=ARMY_DISCORD))
-
-    @discord.ui.button(label="📜 Устав", style=discord.ButtonStyle.primary)
-    async def rules(self, interaction, button):
-        await interaction.response.send_message(
-            "📜 Соблюдай дисциплину и приказы.",
-            ephemeral=True
-        )
-
-    @discord.ui.button(label="🎯 Требования", style=discord.ButtonStyle.secondary)
-    async def req(self, interaction, button):
-        await interaction.response.send_message(
-            "🎯 16+ | Адекватность | Онлайн",
-            ephemeral=True
-        )
-
-# ================= КНОПКИ ЗАЯВКИ =================
+# ================= КНОПКИ =================
 class AppView(discord.ui.View):
-    def __init__(self, user):
+    def __init__(self, thread_id):
         super().__init__(timeout=None)
-        self.user = user
+        self.thread_id = thread_id
+
+    @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
+    async def take(self, interaction, button):
+        applications[self.thread_id]["taken_by"] = str(interaction.user)
+        applications[self.thread_id]["status"] = "В работе"
+        await interaction.response.send_message("Взято", ephemeral=True)
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def ok(self, interaction, button):
-        await self.user.send(random.choice(РОФЛ_ОДОБРЕНО))
-        await interaction.response.send_message("Одобрено", ephemeral=True)
+        await web_action(self.thread_id, "ok")
+        await interaction.response.send_message("Готово", ephemeral=True)
 
     @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.danger)
     async def no(self, interaction, button):
-        await self.user.send(random.choice(РОФЛ_ОТКЛОНЕНО))
-        await interaction.response.send_message("Отклонено", ephemeral=True)
+        await web_action(self.thread_id, "no")
+        await interaction.response.send_message("Готово", ephemeral=True)
 
-    @discord.ui.button(label="📞 Уточнить", style=discord.ButtonStyle.secondary)
-    async def call(self, interaction, button):
-        await self.user.send(random.choice(РОФЛ_УТОЧНИТЬ))
-        await interaction.response.send_message("Уточнение", ephemeral=True)
-
-# ================= ЗАЯВКА =================
+# ================= ЛОГИКА =================
 async def process_app(uid, name, fields):
     user = await bot.fetch_user(uid)
 
     embed = discord.Embed(
-        title=f"Заявка — {name}",
-        description=f"🌐 {ARMY_SITE}\n💬 {ARMY_DISCORD}",
-        color=0xff69b4
+        title=f"📋 {name}",
+        description="Ожидает",
+        color=COLOR_WAIT
     )
-
-    embed.add_field(name="Пользователь", value=f"<@{uid}>", inline=False)
-
-    for f in fields:
-        embed.add_field(name=f["name"], value=f["value"], inline=False)
 
     forum = bot.get_channel(FORUM_CHANNEL_ID)
+    data = await forum.create_thread(name=name, embed=embed)
 
-    thread = await forum.create_thread(
-        name=name,
-        embed=embed
-    )
+    thread = data.thread
+    msg = data.message
 
-    await thread.thread.send("Новая заявка 👀", view=ArmyMenuView())
-    await thread.thread.send(view=AppView(user))
+    applications[thread.id] = {
+        "user": uid,
+        "thread": thread.id,
+        "message": msg.id,
+        "status": "Ожидает",
+        "taken_by": None
+    }
 
-    try:
-        await user.send(random.choice(РОФЛ_ПОЛУЧЕНО))
-    except:
-        pass
+    await thread.send(view=AppView(thread.id))
 
-# ================= NPC =================
-def is_app_channel(channel):
-    return isinstance(channel, discord.Thread)
-
-def npc_reply(text):
-    t = text.lower()
-
-    if any(x in t for x in ["сайт"]):
-        return ("🌐 Вот сайт армии", "links")
-
-    if any(x in t for x in ["дискорд", "discord"]):
-        return ("💬 Вот Discord", "links")
-
-    if any(x in t for x in ["меню", "помощь", "полезное"]):
-        return ("📌 Вот всё полезное", "menu")
-
-    return (random.choice(РОФЛ_ОБЩЕНИЕ), None)
-
-# ================= MESSAGE =================
-@bot.event
-async def on_message(msg):
-    if msg.author.bot:
+async def web_action(thread_id, action):
+    app_data = applications.get(thread_id)
+    if not app_data:
         return
 
-    if is_app_channel(msg.channel):
-        return
+    guild = bot.guilds[0]
+    thread = guild.get_thread(thread_id)
+    msg = await thread.fetch_message(app_data["message"])
 
-    if NPC_CHANNELS and msg.channel.id not in NPC_CHANNELS:
-        return
+    embed = msg.embeds[0]
 
-    if "леночка" in msg.content.lower():
-        text, mode = npc_reply(msg.content)
+    if action == "ok":
+        embed.color = COLOR_OK
+        embed.description = "✅ Одобрено"
+        app_data["status"] = "Одобрено"
 
-        if mode == "menu":
-            await msg.reply(text, view=ArmyMenuView())
-        elif mode == "links":
-            await msg.reply(text, view=ArmyMenuView())
-        else:
-            await msg.reply(text)
+    elif action == "no":
+        embed.color = COLOR_NO
+        embed.description = "❌ Отказ"
+        app_data["status"] = "Отказ"
 
-    await bot.process_commands(msg)
+    await msg.edit(embed=embed)
 
-# ================= КОМАНДА =================
-@bot.command()
-async def меню(ctx):
-    await ctx.send("📌 Меню армии", view=ArmyMenuView())
-
-# ================= READY =================
-@bot.event
-async def on_ready():
-    print(f"Леночка онлайн → {bot.user}")
-
-# ================= FLASK =================
+# ================= ЗАПУСК =================
 def run():
     app.run(host="0.0.0.0", port=8080)
 
 threading.Thread(target=run).start()
 
-# ================= СТАРТ =================
 bot.run(TOKEN)
