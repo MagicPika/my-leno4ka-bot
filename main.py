@@ -1,11 +1,10 @@
 import discord
 from discord.ext import commands
-import os, asyncio, sqlite3, threading
+import os, asyncio, sqlite3, json, threading
+from datetime import datetime
 from flask import Flask, request, jsonify, session, redirect, render_template_string
 
-# ================= CONFIG =================
 TOKEN = os.getenv("DISCORD_TOKEN")
-
 FORUM_CHANNEL_ID = 1458885875692732438
 SECRET = "2122428Matros"
 
@@ -15,7 +14,7 @@ WEB_PASS = "admin123"
 COLOR_WAIT = 0x85144b
 COLOR_OK = 0x2ecc71
 COLOR_NO = 0xe74c3c
-COLOR_TIMEOUT = 0x95a5a6
+COLOR_WORK = 0xf1c40f
 
 # ================= DB =================
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
@@ -26,61 +25,27 @@ CREATE TABLE IF NOT EXISTS apps(
 thread_id INTEGER PRIMARY KEY,
 user_id INTEGER,
 message_id INTEGER,
+name TEXT,
+fields TEXT,
 status TEXT,
 taken_by TEXT,
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+logs TEXT,
+created_at TEXT
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS stats(
+user TEXT PRIMARY KEY,
+accepted INTEGER,
+rejected INTEGER
 )
 """)
 conn.commit()
 
 # ================= FLASK =================
 app = Flask(__name__)
-app.secret_key = "secret_key"
-
-LOGIN_HTML = """
-<h2>Login</h2>
-<form method="post">
-<input name="login" placeholder="login"><br>
-<input name="pass" type="password"><br>
-<button>Войти</button>
-</form>
-"""
-
-PANEL_HTML = """
-<h1>CRM Панель</h1>
-
-<a href="/logout">Выйти</a>
-
-<table border="1">
-<tr>
-<th>ID</th><th>Статус</th><th>Взял</th><th>Действия</th>
-</tr>
-
-{% for a in apps %}
-<tr>
-<td>{{a[0]}}</td>
-<td>{{a[3]}}</td>
-<td>{{a[4]}}</td>
-<td>
-<button onclick="act('{{a[0]}}','take')">Взять</button>
-<button onclick="act('{{a[0]}}','ok')">OK</button>
-<button onclick="act('{{a[0]}}','no')">NO</button>
-</td>
-</tr>
-{% endfor %}
-
-</table>
-
-<script>
-function act(id,action){
- fetch("/action",{
-  method:"POST",
-  headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({id:id,action:action})
- }).then(()=>location.reload())
-}
-</script>
-"""
+app.secret_key = "secret"
 
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -88,29 +53,45 @@ def login():
         if request.form["login"] == WEB_LOGIN and request.form["pass"] == WEB_PASS:
             session["auth"] = True
             return redirect("/")
-    return LOGIN_HTML
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
+    return "<form method=post><input name=login><input name=pass type=password><button>Login</button>"
 
 @app.route("/")
 def panel():
     if not session.get("auth"):
         return redirect("/login")
 
-    cur.execute("SELECT * FROM apps ORDER BY created_at DESC")
-    apps = cur.fetchall()
-    return render_template_string(PANEL_HTML, apps=apps)
+    cur.execute("SELECT thread_id,status,taken_by FROM apps ORDER BY created_at DESC")
+    rows = cur.fetchall()
+
+    html = "<h1>CRM</h1>"
+    for r in rows:
+        html += f"""
+        <div>
+        #{r[0]} | {r[1]} | {r[2]}
+        <button onclick="act({r[0]},'take')">Взять</button>
+        <button onclick="act({r[0]},'ok')">OK</button>
+        <button onclick="act({r[0]},'no')">NO</button>
+        </div>
+        """
+
+    html += """
+    <script>
+    function act(id,a){
+    fetch("/action",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({id:id,action:a})}).then(()=>location.reload())
+    }
+    </script>
+    """
+
+    return html
 
 @app.route("/action", methods=["POST"])
 def action():
     if not session.get("auth"):
         return "no",403
-
     data = request.json
-    bot.loop.create_task(web_action(int(data["id"]), data["action"]))
+    bot.loop.create_task(handle_action(data["id"], data["action"], "WEB"))
     return "ok"
 
 @app.route("/zayavka", methods=["POST"])
@@ -119,7 +100,7 @@ def zayavka():
         return jsonify({"error":"bad"}),401
 
     data = request.json
-    bot.loop.create_task(process_app(
+    bot.loop.create_task(create_app(
         int(data["discordId"]),
         data.get("authorName","Без имени"),
         data.get("fields",[])
@@ -130,85 +111,135 @@ def zayavka():
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================= VIEW =================
-class AppView(discord.ui.View):
-    def __init__(self, thread_id):
-        super().__init__(timeout=None)
-        self.thread_id = thread_id
-
-    @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
-    async def take(self, interaction, button):
-        cur.execute("UPDATE apps SET taken_by=?, status=? WHERE thread_id=?",
-                    (str(interaction.user), "В работе", self.thread_id))
-        conn.commit()
-        await interaction.response.send_message("Взято", ephemeral=True)
-
-    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
-    async def ok(self, interaction, button):
-        await web_action(self.thread_id, "ok")
-        await interaction.response.send_message("OK", ephemeral=True)
-
-    @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.danger)
-    async def no(self, interaction, button):
-        await web_action(self.thread_id, "no")
-        await interaction.response.send_message("NO", ephemeral=True)
-
-# ================= CREATE =================
-async def process_app(uid, name, fields):
-    user = await bot.fetch_user(uid)
+# ================= EMBED =================
+def build_embed(app_data, user):
+    fields = json.loads(app_data["fields"])
+    logs = json.loads(app_data["logs"])
 
     embed = discord.Embed(
-        title=f"📋 {name}",
-        description="Ожидает",
-        color=COLOR_WAIT
+        title=f"📋 {app_data['name']}",
+        description=f"Статус: {app_data['status']}",
+        color=COLOR_WAIT,
+        timestamp=datetime.utcnow()
     )
 
-    embed.add_field(name="Пользователь", value=f"<@{uid}>")
+    try:
+        embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
+    except:
+        pass
 
-    forum = bot.get_channel(FORUM_CHANNEL_ID)
-    data = await forum.create_thread(name=name, embed=embed)
+    embed.add_field(name="👤 Пользователь", value=f"<@{app_data['user_id']}>", inline=False)
 
-    thread = data.thread
-    msg = data.message
+    for f in fields:
+        embed.add_field(name=f["name"], value=f["value"], inline=False)
 
-    cur.execute("INSERT INTO apps VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)",
-                (thread.id, uid, msg.id, "Ожидает", None))
+    if app_data["taken_by"]:
+        embed.add_field(name="👮 Взял", value=app_data["taken_by"], inline=False)
+
+    if logs:
+        log_text = "\n".join(logs[-5:])
+        embed.add_field(name="📜 История", value=log_text, inline=False)
+
+    embed.set_footer(text="Леночка PRO 💌")
+    return embed
+
+# ================= CREATE =================
+async def create_app(uid, name, fields):
+    user = await bot.fetch_user(uid)
+
+    logs = [f"🟡 Создана: {datetime.utcnow().strftime('%H:%M')}"]
+
+    cur.execute("INSERT INTO apps VALUES(?,?,?,?,?,?,?,?,?)",
+        (0, uid, 0, name, json.dumps(fields), "Ожидает", None, json.dumps(logs), datetime.utcnow().isoformat()))
     conn.commit()
 
+    forum = bot.get_channel(FORUM_CHANNEL_ID)
+    temp = await forum.create_thread(name=name, content="Создание...")
+
+    thread = temp.thread
+    msg = await thread.send("...")
+
+    cur.execute("UPDATE apps SET thread_id=?, message_id=? WHERE thread_id=0",
+                (thread.id, msg.id))
+    conn.commit()
+
+    app_data = get_app(thread.id)
+    embed = build_embed(app_data, user)
+
+    await msg.edit(embed=embed, content=None)
     await thread.send(view=AppView(thread.id))
 
 # ================= ACTION =================
-async def web_action(thread_id, action):
-    cur.execute("SELECT message_id FROM apps WHERE thread_id=?", (thread_id,))
+def get_app(tid):
+    cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
     row = cur.fetchone()
-    if not row:
-        return
+    keys = ["thread_id","user_id","message_id","name","fields","status","taken_by","logs","created_at"]
+    return dict(zip(keys,row))
 
-    message_id = row[0]
+async def handle_action(tid, action, actor):
+    app_data = get_app(tid)
+    user = await bot.fetch_user(app_data["user_id"])
 
-    guild = bot.guilds[0]
-    thread = guild.get_thread(thread_id)
-    msg = await thread.fetch_message(message_id)
+    logs = json.loads(app_data["logs"])
 
-    embed = msg.embeds[0]
+    if action == "take":
+        app_data["taken_by"] = actor
+        app_data["status"] = "В работе"
+        logs.append(f"👮 Взял: {actor}")
 
-    if action == "ok":
-        embed.color = COLOR_OK
-        embed.description = "✅ Одобрено"
-        cur.execute("UPDATE apps SET status=? WHERE thread_id=?", ("Одобрено", thread_id))
+    elif action == "ok":
+        app_data["status"] = "Одобрено"
+        logs.append(f"✅ Одобрил: {actor}")
 
     elif action == "no":
-        embed.color = COLOR_NO
-        embed.description = "❌ Отклонено"
-        cur.execute("UPDATE apps SET status=? WHERE thread_id=?", ("Отклонено", thread_id))
+        app_data["status"] = "Отклонено"
+        logs.append(f"❌ Отклонил: {actor}")
 
+    cur.execute("""
+    UPDATE apps SET status=?, taken_by=?, logs=?
+    WHERE thread_id=?
+    """, (app_data["status"], app_data["taken_by"], json.dumps(logs), tid))
     conn.commit()
+
+    guild = bot.guilds[0]
+    thread = guild.get_thread(tid)
+    msg = await thread.fetch_message(app_data["message_id"])
+
+    embed = build_embed(get_app(tid), user)
+
+    if app_data["status"] == "Одобрено":
+        embed.color = COLOR_OK
+    elif app_data["status"] == "Отклонено":
+        embed.color = COLOR_NO
+    elif app_data["status"] == "В работе":
+        embed.color = COLOR_WORK
+
     await msg.edit(embed=embed)
 
-# ================= COMMAND =================
-@bot.command()
-async def панель(ctx):
-    await ctx.send("CRM: /login")
+    if app_data["status"] in ["Одобрено","Отклонено"]:
+        await asyncio.sleep(5)
+        await thread.edit(archived=True, locked=True)
+
+# ================= BUTTONS =================
+class AppView(discord.ui.View):
+    def __init__(self, tid):
+        super().__init__(timeout=None)
+        self.tid = tid
+
+    @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
+    async def take(self, i, b):
+        await handle_action(self.tid, "take", i.user.mention)
+        await i.response.send_message("Ок", ephemeral=True)
+
+    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
+    async def ok(self, i, b):
+        await handle_action(self.tid, "ok", i.user.mention)
+        await i.response.send_message("Ок", ephemeral=True)
+
+    @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.danger)
+    async def no(self, i, b):
+        await handle_action(self.tid, "no", i.user.mention)
+        await i.response.send_message("Ок", ephemeral=True)
 
 # ================= RUN =================
 def run():
