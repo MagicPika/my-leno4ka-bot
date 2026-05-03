@@ -1,121 +1,136 @@
 import discord
 from discord.ext import commands
-import os, random, asyncio, threading
-from flask import Flask, request, jsonify, render_template_string
+import os, asyncio, sqlite3, threading
+from flask import Flask, request, jsonify, session, redirect, render_template_string
 
-# ================= НАСТРОЙКИ =================
+# ================= CONFIG =================
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 FORUM_CHANNEL_ID = 1458885875692732438
 SECRET = "2122428Matros"
 
-ADMIN_TOKEN = "admin123"  # пароль для веб-панели (поменяй)
-
-ARMY_SITE = "https://your-site.ru"
-ARMY_DISCORD = "https://discord.gg/8yZWHRsAk2"
+WEB_LOGIN = "admin"
+WEB_PASS = "admin123"
 
 COLOR_WAIT = 0x85144b
 COLOR_OK = 0x2ecc71
 COLOR_NO = 0xe74c3c
-COLOR_CALL = 0xf1c40f
 COLOR_TIMEOUT = 0x95a5a6
 
-REMIND_AFTER = 12 * 3600
-TIMEOUT_AFTER = 24 * 3600
+# ================= DB =================
+conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
+cur = conn.cursor()
 
-applications = {}
+cur.execute("""
+CREATE TABLE IF NOT EXISTS apps(
+thread_id INTEGER PRIMARY KEY,
+user_id INTEGER,
+message_id INTEGER,
+status TEXT,
+taken_by TEXT,
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+conn.commit()
 
 # ================= FLASK =================
 app = Flask(__name__)
+app.secret_key = "secret_key"
 
-# ---------- CRM HTML ----------
-HTML = """
-<html>
-<head>
-<title>Леночка CRM</title>
-<style>
-body { font-family: Arial; background:#111; color:white; }
-.card {
-  background:#1e1e1e; padding:15px; margin:10px;
-  border-radius:10px;
-}
-button {
-  margin:5px; padding:5px 10px;
-}
-</style>
-</head>
-<body>
+LOGIN_HTML = """
+<h2>Login</h2>
+<form method="post">
+<input name="login" placeholder="login"><br>
+<input name="pass" type="password"><br>
+<button>Войти</button>
+</form>
+"""
 
-<h1>📊 Панель заявок</h1>
+PANEL_HTML = """
+<h1>CRM Панель</h1>
 
-{% for id, a in apps.items() %}
-<div class="card">
-<b>ID:</b> {{id}}<br>
-<b>Статус:</b> {{a["status"]}}<br>
-<b>Взял:</b> {{a["taken_by"]}}<br>
+<a href="/logout">Выйти</a>
 
-<button onclick="act('{{id}}','take')">Взять</button>
-<button onclick="act('{{id}}','ok')">Одобрить</button>
-<button onclick="act('{{id}}','no')">Отказать</button>
-</div>
+<table border="1">
+<tr>
+<th>ID</th><th>Статус</th><th>Взял</th><th>Действия</th>
+</tr>
+
+{% for a in apps %}
+<tr>
+<td>{{a[0]}}</td>
+<td>{{a[3]}}</td>
+<td>{{a[4]}}</td>
+<td>
+<button onclick="act('{{a[0]}}','take')">Взять</button>
+<button onclick="act('{{a[0]}}','ok')">OK</button>
+<button onclick="act('{{a[0]}}','no')">NO</button>
+</td>
+</tr>
 {% endfor %}
 
+</table>
+
 <script>
-function act(id, action){
+function act(id,action){
  fetch("/action",{
-   method:"POST",
-   headers:{
-     "Content-Type":"application/json",
-     "Authorization":"Bearer {{token}}"
-   },
-   body:JSON.stringify({id:id,action:action})
+  method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({id:id,action:action})
  }).then(()=>location.reload())
 }
 </script>
-
-</body>
-</html>
 """
 
-# ---------- API ----------
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "POST":
+        if request.form["login"] == WEB_LOGIN and request.form["pass"] == WEB_PASS:
+            session["auth"] = True
+            return redirect("/")
+    return LOGIN_HTML
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
 @app.route("/")
 def panel():
-    token = request.args.get("token")
-    if token != ADMIN_TOKEN:
-        return "Нет доступа"
-    return render_template_string(HTML, apps=applications, token=ADMIN_TOKEN)
+    if not session.get("auth"):
+        return redirect("/login")
+
+    cur.execute("SELECT * FROM apps ORDER BY created_at DESC")
+    apps = cur.fetchall()
+    return render_template_string(PANEL_HTML, apps=apps)
 
 @app.route("/action", methods=["POST"])
 def action():
-    if request.headers.get("Authorization") != f"Bearer {ADMIN_TOKEN}":
-        return "no", 403
+    if not session.get("auth"):
+        return "no",403
 
     data = request.json
-    tid = int(data["id"])
-    act = data["action"]
-
-    bot.loop.create_task(web_action(tid, act))
+    bot.loop.create_task(web_action(int(data["id"]), data["action"]))
     return "ok"
 
-# ---------- ЗАЯВКА ----------
 @app.route("/zayavka", methods=["POST"])
 def zayavka():
     if request.headers.get("Authorization") != f"Bearer {SECRET}":
-        return jsonify({"error": "bad key"}), 401
+        return jsonify({"error":"bad"}),401
 
     data = request.json
-    uid = int(data["discordId"])
-    name = data.get("authorName", "Без имени")
-    fields = data.get("fields", [])
+    bot.loop.create_task(process_app(
+        int(data["discordId"]),
+        data.get("authorName","Без имени"),
+        data.get("fields",[])
+    ))
+    return jsonify({"ok":True})
 
-    bot.loop.create_task(process_app(uid, name, fields))
-    return jsonify({"ok": True})
-
-# ================= БОТ =================
+# ================= BOT =================
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================= КНОПКИ =================
+# ================= VIEW =================
 class AppView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
@@ -123,21 +138,22 @@ class AppView(discord.ui.View):
 
     @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
     async def take(self, interaction, button):
-        applications[self.thread_id]["taken_by"] = str(interaction.user)
-        applications[self.thread_id]["status"] = "В работе"
+        cur.execute("UPDATE apps SET taken_by=?, status=? WHERE thread_id=?",
+                    (str(interaction.user), "В работе", self.thread_id))
+        conn.commit()
         await interaction.response.send_message("Взято", ephemeral=True)
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def ok(self, interaction, button):
         await web_action(self.thread_id, "ok")
-        await interaction.response.send_message("Готово", ephemeral=True)
+        await interaction.response.send_message("OK", ephemeral=True)
 
     @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.danger)
     async def no(self, interaction, button):
         await web_action(self.thread_id, "no")
-        await interaction.response.send_message("Готово", ephemeral=True)
+        await interaction.response.send_message("NO", ephemeral=True)
 
-# ================= ЛОГИКА =================
+# ================= CREATE =================
 async def process_app(uid, name, fields):
     user = await bot.fetch_user(uid)
 
@@ -147,46 +163,54 @@ async def process_app(uid, name, fields):
         color=COLOR_WAIT
     )
 
+    embed.add_field(name="Пользователь", value=f"<@{uid}>")
+
     forum = bot.get_channel(FORUM_CHANNEL_ID)
     data = await forum.create_thread(name=name, embed=embed)
 
     thread = data.thread
     msg = data.message
 
-    applications[thread.id] = {
-        "user": uid,
-        "thread": thread.id,
-        "message": msg.id,
-        "status": "Ожидает",
-        "taken_by": None
-    }
+    cur.execute("INSERT INTO apps VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)",
+                (thread.id, uid, msg.id, "Ожидает", None))
+    conn.commit()
 
     await thread.send(view=AppView(thread.id))
 
+# ================= ACTION =================
 async def web_action(thread_id, action):
-    app_data = applications.get(thread_id)
-    if not app_data:
+    cur.execute("SELECT message_id FROM apps WHERE thread_id=?", (thread_id,))
+    row = cur.fetchone()
+    if not row:
         return
+
+    message_id = row[0]
 
     guild = bot.guilds[0]
     thread = guild.get_thread(thread_id)
-    msg = await thread.fetch_message(app_data["message"])
+    msg = await thread.fetch_message(message_id)
 
     embed = msg.embeds[0]
 
     if action == "ok":
         embed.color = COLOR_OK
         embed.description = "✅ Одобрено"
-        app_data["status"] = "Одобрено"
+        cur.execute("UPDATE apps SET status=? WHERE thread_id=?", ("Одобрено", thread_id))
 
     elif action == "no":
         embed.color = COLOR_NO
-        embed.description = "❌ Отказ"
-        app_data["status"] = "Отказ"
+        embed.description = "❌ Отклонено"
+        cur.execute("UPDATE apps SET status=? WHERE thread_id=?", ("Отклонено", thread_id))
 
+    conn.commit()
     await msg.edit(embed=embed)
 
-# ================= ЗАПУСК =================
+# ================= COMMAND =================
+@bot.command()
+async def панель(ctx):
+    await ctx.send("CRM: /login")
+
+# ================= RUN =================
 def run():
     app.run(host="0.0.0.0", port=8080)
 
