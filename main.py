@@ -49,6 +49,22 @@ def get_app(tid):
     keys = ["thread_id","user_id","message_id","name","fields","status","taken_by","logs","created_at"]
     return dict(zip(keys, row))
 
+
+async def get_thread_safe(tid):
+    # 1. пробуем из кеша
+    channel = bot.get_channel(tid)
+
+    # 2. если нет — через API
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(tid)
+        except Exception as e:
+            print(f"[ERROR] fetch_channel {tid}: {e}")
+            return None
+
+    return channel
+
+
 def build_embed(app_data, user):
     fields = json.loads(app_data["fields"])
     logs = json.loads(app_data["logs"])
@@ -66,7 +82,11 @@ def build_embed(app_data, user):
     except:
         pass
 
-    embed.add_field(name="👤 Пользователь", value=f"<@{app_data['user_id']}>", inline=False)
+    embed.add_field(
+        name="👤 Пользователь",
+        value=f"<@{app_data['user_id']}> (`{app_data['user_id']}`)",
+        inline=False
+    )
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"], inline=False)
@@ -75,25 +95,37 @@ def build_embed(app_data, user):
         embed.add_field(name="👮 Взял", value=app_data["taken_by"], inline=False)
 
     if logs:
-        embed.add_field(name="📜 История", value="\n".join(logs[-5:]), inline=False)
+        embed.add_field(
+            name="📜 История",
+            value="\n".join(logs[-5:]),
+            inline=False
+        )
 
     embed.set_footer(text="Леночка 💌")
     return embed
 
 # ================= CREATE =================
 async def create_app(uid, name, fields):
-    user = await bot.fetch_user(uid)
+    try:
+        user = await bot.fetch_user(uid)
+    except:
+        print(f"[ERROR] Не удалось получить пользователя {uid}")
+        return
 
     logs = [f"🟡 Создана {datetime.utcnow().strftime('%H:%M')}"]
 
-    # создаём тред сразу
     forum = bot.get_channel(FORUM_CHANNEL_ID)
+    if not forum:
+        print("Форум не найден")
+        return
+
+    # создаём тред
     data = await forum.create_thread(name=name, content="Создание заявки...")
-
     thread = data.thread
-    msg = await thread.send("⏳ Загружаю...")
 
-    # сохраняем сразу правильные ID
+    msg = await thread.send("⏳ Загрузка...")
+
+    # сохраняем
     cur.execute("""
     INSERT INTO apps VALUES(?,?,?,?,?,?,?,?,?)
     """, (
@@ -115,13 +147,19 @@ async def create_app(uid, name, fields):
     await msg.edit(content=None, embed=embed)
     await thread.send(view=AppView(thread.id))
 
+
 # ================= ACTION =================
 async def handle_action(tid, action, actor):
     app_data = get_app(tid)
     if not app_data:
         return
 
-    user = await bot.fetch_user(app_data["user_id"])
+    try:
+        user = await bot.fetch_user(app_data["user_id"])
+    except:
+        print("Не удалось получить пользователя")
+        return
+
     logs = json.loads(app_data["logs"])
 
     if action == "take":
@@ -147,9 +185,15 @@ async def handle_action(tid, action, actor):
     ))
     conn.commit()
 
-    guild = bot.guilds[0]
-    thread = guild.get_thread(tid)
-    msg = await thread.fetch_message(app_data["message_id"])
+    thread = await get_thread_safe(tid)
+    if not thread:
+        return
+
+    try:
+        msg = await thread.fetch_message(app_data["message_id"])
+    except Exception as e:
+        print(f"[ERROR] fetch_message: {e}")
+        return
 
     updated = get_app(tid)
     embed = build_embed(updated, user)
@@ -163,6 +207,7 @@ async def handle_action(tid, action, actor):
 
     await msg.edit(embed=embed)
 
+
 # ================= BUTTONS =================
 class AppView(discord.ui.View):
     def __init__(self, tid):
@@ -172,17 +217,18 @@ class AppView(discord.ui.View):
     @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
     async def take(self, i, b):
         await handle_action(self.tid, "take", i.user.mention)
-        await i.response.send_message("Взял", ephemeral=True)
+        await i.response.send_message("Взято", ephemeral=True)
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def ok(self, i, b):
         await handle_action(self.tid, "ok", i.user.mention)
-        await i.response.send_message("Ок", ephemeral=True)
+        await i.response.send_message("Одобрено", ephemeral=True)
 
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
     async def no(self, i, b):
         await handle_action(self.tid, "no", i.user.mention)
-        await i.response.send_message("Ок", ephemeral=True)
+        await i.response.send_message("Отклонено", ephemeral=True)
+
 
 # ================= FLASK =================
 app = Flask(__name__)
@@ -193,15 +239,19 @@ def zayavka():
         return jsonify({"error":"bad"}),401
 
     data = request.json
+
     bot.loop.create_task(create_app(
         int(data["discordId"]),
         data.get("authorName","Без имени"),
         data.get("fields",[])
     ))
+
     return jsonify({"ok":True})
 
+
 def run():
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 threading.Thread(target=run).start()
 
