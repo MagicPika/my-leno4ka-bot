@@ -12,7 +12,7 @@ SECRET = "2122428Matros"
 ADMIN_TOKEN = "admin123"  # пароль для веб-панели (поменяй)
 
 ARMY_SITE = "https://your-site.ru"
-ARMY_DISCORD = "https://discord.gg/yourinvite"
+ARMY_DISCORD = "https://discord.gg/8yZWHRsAk2"
 
 COLOR_WAIT = 0x85144b
 COLOR_OK = 0x2ecc71
