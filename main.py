@@ -157,11 +157,12 @@ async def handle_action(tid, action, actor):
     try:
         user = await bot.fetch_user(app_data["user_id"])
     except:
-        print("Не удалось получить пользователя")
+        print("user fetch fail")
         return
 
     logs = json.loads(app_data["logs"])
 
+    # ===== логика статуса =====
     if action == "take":
         app_data["status"] = "В работе"
         app_data["taken_by"] = actor
@@ -185,16 +186,47 @@ async def handle_action(tid, action, actor):
     ))
     conn.commit()
 
-    thread = await get_thread_safe(tid)
-    if not thread:
+    # ===== ПОЛУЧЕНИЕ ТРЕДА (железобетон) =====
+    thread = None
+
+    # 1. кеш
+    channel = bot.get_channel(tid)
+
+    # 2. API
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(tid)
+        except Exception as e:
+            print(f"[ERROR] fetch_channel {tid}: {e}")
+            return
+
+    # 3. проверка что это именно тред
+    if isinstance(channel, discord.Thread):
+        thread = channel
+    else:
+        print(f"[ERROR] Это не тред: {type(channel)}")
         return
 
+    # ===== ПОЛУЧЕНИЕ СООБЩЕНИЯ =====
+    msg = None
     try:
         msg = await thread.fetch_message(app_data["message_id"])
-    except Exception as e:
-        print(f"[ERROR] fetch_message: {e}")
+    except:
+        try:
+            # fallback через историю
+            async for m in thread.history(limit=50):
+                if m.id == app_data["message_id"]:
+                    msg = m
+                    break
+        except Exception as e:
+            print(f"[ERROR] history fail: {e}")
+            return
+
+    if not msg:
+        print(f"[ERROR] сообщение не найдено {tid}")
         return
 
+    # ===== ОБНОВЛЕНИЕ EMBED =====
     updated = get_app(tid)
     embed = build_embed(updated, user)
 
@@ -205,7 +237,10 @@ async def handle_action(tid, action, actor):
     elif updated["status"] == "В работе":
         embed.color = COLOR_WORK
 
-    await msg.edit(embed=embed)
+    try:
+        await msg.edit(embed=embed)
+    except Exception as e:
+        print(f"[ERROR] edit fail: {e}")
 
 
 # ================= BUTTONS =================
