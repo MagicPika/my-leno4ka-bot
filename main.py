@@ -129,33 +129,76 @@ def persona(uid):
 """
 
 # ================= GPT =================
+# ================= STABLE GPT =================
+
+CACHE = {}  # простой кэш
+
+MODELS = [
+    "openrouter/auto",
+    "mistralai/mistral-7b-instruct:free",
+    "meta-llama/llama-3-8b-instruct:free"
+]
+
+def fallback_answer(text):
+    low = text.lower()
+
+    if "как вступить" in low:
+        return "Заявку подай и жди, всё уже придумано до тебя"
+    if "привет" in low:
+        return "Ну привет, что хотел"
+
+    return random.choice([
+        "Ты сейчас серьёзно?",
+        "Разберись сам сначала",
+        "Заявки открой",
+        "Не тупи"
+    ])
+
 async def lena_reply(uid, text):
     try:
-        msgs = [
+        # ===== КЭШ =====
+        key = text.lower().strip()
+        if key in CACHE:
+            return CACHE[key]
+
+        history = load_memory(uid)
+
+        messages = [
             {"role": "system", "content": persona(uid)},
-            *load_memory(uid),
+            *history,
             {"role": "user", "content": text}
         ]
 
-        r = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=msgs,
-            max_tokens=120
-        )
+        # ===== ПЕРЕБОР МОДЕЛЕЙ =====
+        for model in MODELS:
+            try:
+                r = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_tokens=120,
+                    timeout=10
+                )
 
-        ans = r.choices[0].message.content
+                ans = r.choices[0].message.content
 
-        save_message(uid, "user", text)
-        save_message(uid, "assistant", ans)
+                if ans:
+                    # сохраняем
+                    save_message(uid, "user", text)
+                    save_message(uid, "assistant", ans)
 
-        if "спасибо" in text.lower():
-            update_rep(uid, 1)
+                    CACHE[key] = ans  # кэш
+                    return ans
 
-        return ans
+            except Exception as e:
+                print(f"MODEL FAIL [{model}]:", e)
+                continue
+
+        # ===== FALLBACK =====
+        return fallback_answer(text)
 
     except Exception as e:
-        print("GPT ERROR:", e)
-        return None
+        print("CRITICAL GPT ERROR:", e)
+        return fallback_answer(text)
 
 # ================= UTILS =================
 def get_app(tid):
