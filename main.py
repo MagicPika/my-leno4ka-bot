@@ -35,12 +35,31 @@ MODELS = [
 GPT_ENABLED = True
 CACHE = {}
 
-# ================= EVIL =================
-EVIL_LEVEL = 20
+# ================= DIALOG =================
+DIALOGS = {}
+DIALOG_TIMEOUT = 60
 
-def change_evil(v):
-    global EVIL_LEVEL
-    EVIL_LEVEL = max(0, min(100, EVIL_LEVEL + v))
+def start_dialog(uid):
+    DIALOGS[uid] = time.time()
+
+def in_dialog(uid):
+    if uid not in DIALOGS:
+        return False
+    if time.time() - DIALOGS[uid] > DIALOG_TIMEOUT:
+        del DIALOGS[uid]
+        return False
+    return True
+
+def refresh_dialog(uid):
+    DIALOGS[uid] = time.time()
+
+# ================= TRIGGERS =================
+TRIGGERS = ["леночка", "лена", "лен"]
+COMMAND_WORDS = ["помоги", "что делать", "как вступить", "объясни"]
+
+def is_lena_call(text):
+    t = text.lower()
+    return any(x in t for x in TRIGGERS) or any(x in t for x in COMMAND_WORDS)
 
 # ================= DB =================
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
@@ -69,13 +88,6 @@ ts TEXT
 )
 """)
 
-cur.execute("""
-CREATE TABLE IF NOT EXISTS user_stats(
-user_id INTEGER PRIMARY KEY,
-rep INTEGER DEFAULT 0
-)
-""")
-
 conn.commit()
 
 # ================= MEMORY =================
@@ -84,53 +96,20 @@ def save_message(uid, role, content):
                 (uid, role, content, datetime.utcnow().isoformat()))
     conn.commit()
 
-def load_memory(uid, limit=6):
-    cur.execute("""
-    SELECT role, content FROM user_memory
-    WHERE user_id=? ORDER BY ts DESC LIMIT ?
-    """, (uid, limit))
+def load_memory(uid):
+    cur.execute("SELECT role, content FROM user_memory WHERE user_id=? ORDER BY ts DESC LIMIT 6", (uid,))
     rows = cur.fetchall()
     rows.reverse()
     return [{"role": r[0], "content": r[1]} for r in rows]
 
-def get_rep(uid):
-    cur.execute("SELECT rep FROM user_stats WHERE user_id=?", (uid,))
-    row = cur.fetchone()
-    return row[0] if row else 0
-
-def update_rep(uid, delta):
-    cur.execute("""
-    INSERT INTO user_stats(user_id, rep)
-    VALUES(?,?)
-    ON CONFLICT(user_id)
-    DO UPDATE SET rep = rep + ?
-    """, (uid, delta, delta))
-    conn.commit()
-
 # ================= PERSONA =================
-def persona(uid):
-    rep = get_rep(uid)
-
-    if EVIL_LEVEL < 30:
-        mood = "добрая"
-    elif EVIL_LEVEL < 70:
-        mood = "строгая"
-    else:
-        mood = "злая"
-
-    if rep > 5:
-        att = "уважительно"
-    elif rep < -5:
-        att = "раздражённо"
-    else:
-        att = "нейтрально"
-
-    return f"""
-Ты Леночка, администратор Discord сервера армии.
-Характер: {mood}
-Отношение: {att}
-
-Пиши коротко (1-2 предложения), как человек.
+def persona():
+    return """
+Ты Леночка, живой человек.
+Отвечай ТОЛЬКО на русском.
+Коротко (1-2 предложения).
+Можешь быть с характером.
+Поддерживай диалог.
 """
 
 # ================= GPT =================
@@ -138,18 +117,17 @@ def fallback(text):
     return random.choice([
         "Ты сейчас серьёзно?",
         "Заявку открой",
-        "Сам подумай",
-        "Не тупи"
+        "Сам подумай"
     ])
 
 async def lena_reply(uid, text):
-    key = text.lower().strip()
+    key = text.lower()
 
     if key in CACHE:
         return CACHE[key]
 
     messages = [
-        {"role": "system", "content": persona(uid)},
+        {"role": "system", "content": persona()},
         *load_memory(uid),
         {"role": "user", "content": text}
     ]
@@ -165,16 +143,15 @@ async def lena_reply(uid, text):
             ans = r.choices[0].message.content
             print("GPT:", ans)
 
-            if ans and len(ans.strip()) > 3:
+            if ans:
                 save_message(uid, "user", text)
                 save_message(uid, "assistant", ans)
                 CACHE[key] = ans
                 return ans
 
         except Exception as e:
-            print("MODEL FAIL:", model, e)
+            print("MODEL FAIL:", e)
 
-    print("FALLBACK USED")
     return fallback(text)
 
 # ================= BOT =================
@@ -186,22 +163,16 @@ def build_embed(app, user):
     emb = discord.Embed(
         title=f"📋 {app['name']}",
         description=f"Статус: {app['status']}",
-        color=COLOR_WAIT,
         timestamp=datetime.utcnow()
     )
-
     emb.set_thumbnail(url=user.display_avatar.url)
-    emb.add_field(name="Пользователь", value=f"<@{app['user_id']}>", inline=False)
 
     for f in json.loads(app["fields"]):
         emb.add_field(name=f["name"], value=f["value"], inline=False)
 
-    if app["taken_by"]:
-        emb.add_field(name="Взял", value=app["taken_by"], inline=False)
-
     return emb
 
-# ================= DB APP =================
+# ================= ACTION =================
 def get_app(tid):
     cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
     row = cur.fetchone()
@@ -210,46 +181,20 @@ def get_app(tid):
     keys = ["thread_id","user_id","message_id","name","fields","status","taken_by","logs","created_at"]
     return dict(zip(keys,row))
 
-# ================= ACTION =================
 async def handle_action(tid, action, actor):
     app = get_app(tid)
     if not app:
         return
 
-    user = await bot.fetch_user(app["user_id"])
-
     if action == "take":
         app["status"] = "В работе"
-        app["taken_by"] = actor
-
     elif action == "ok":
         app["status"] = "Одобрено"
-
     elif action == "no":
         app["status"] = "Отклонено"
 
-    cur.execute("UPDATE apps SET status=?, taken_by=? WHERE thread_id=?",
-                (app["status"], app["taken_by"], tid))
+    cur.execute("UPDATE apps SET status=? WHERE thread_id=?", (app["status"], tid))
     conn.commit()
-
-    thread = bot.get_channel(tid)
-    msg = await thread.fetch_message(app["message_id"])
-
-    emb = build_embed(get_app(tid), user)
-
-    if app["status"] == "Одобрено":
-        emb.color = COLOR_OK
-    elif app["status"] == "Отклонено":
-        emb.color = COLOR_NO
-    elif app["status"] == "В работе":
-        emb.color = COLOR_WORK
-
-    await msg.edit(embed=emb)
-
-    try:
-        await user.send(f"Ваша заявка: {app['status']}")
-    except:
-        pass
 
 # ================= BUTTONS =================
 class AppView(discord.ui.View):
@@ -291,28 +236,32 @@ async def create_app(uid, name, fields):
     await thread.send(view=AppView(thread.id))
 
 # ================= CHAT =================
-COOLDOWN = {}
-
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
     if GPT_ENABLED and message.channel.id in CHAT_CHANNELS:
-        now = time.time()
 
-        if now - COOLDOWN.get(message.author.id, 0) > 15:
-            if bot.user in message.mentions or random.random() < 0.2:
-                COOLDOWN[message.author.id] = now
+        uid = message.author.id
+        text = message.content
 
-                reply = await lena_reply(message.author.id, message.content)
-                await message.reply(reply)
+        called = bot.user in message.mentions or is_lena_call(text)
+        active = in_dialog(uid)
+
+        if called:
+            start_dialog(uid)
+
+        if called or active:
+            refresh_dialog(uid)
+            reply = await lena_reply(uid, text)
+            await message.reply(reply)
 
     await bot.process_commands(message)
 
-# ================= COMMANDS =================
+# ================= COMMAND =================
 @bot.tree.command(name="гпт")
-async def gpt_cmd(interaction: discord.Interaction, mode: str):
+async def gpt_toggle(interaction: discord.Interaction, mode: str):
     global GPT_ENABLED
     GPT_ENABLED = (mode == "on")
     await interaction.response.send_message("OK", ephemeral=True)
