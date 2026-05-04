@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-import os, asyncio, sqlite3, json, threading
+import os, asyncio, sqlite3, json, threading, random
 from datetime import datetime
 from flask import Flask, request, jsonify
 
@@ -13,6 +13,34 @@ COLOR_WAIT = 0x85144b
 COLOR_OK = 0x2ecc71
 COLOR_NO = 0xe74c3c
 COLOR_WORK = 0xf1c40f
+
+# ================= EVIL SYSTEM =================
+EVIL_ENABLED = True
+EVIL_LEVEL = 20
+
+def change_evil(val):
+    global EVIL_LEVEL
+    EVIL_LEVEL = max(0, min(100, EVIL_LEVEL + val))
+
+def get_phrase(action):
+    lvl = EVIL_LEVEL
+
+    if action == "idle":
+        if lvl < 30:
+            return "Ребят, заявки висят..."
+        elif lvl < 70:
+            return "Вы вообще собираетесь их смотреть?"
+        else:
+            return "АЛЁ ВЫ ЧТО СЛЕПЫЕ? ЗАЯВКИ ВИСЯТ"
+
+    if action == "take":
+        return "Ну наконец-то" if lvl > 50 else "Взяли заявку 👍"
+
+    if action == "ok":
+        return "Одобрено" if lvl < 50 else "Ну хоть это сделали"
+
+    if action == "no":
+        return "Отказ" if lvl < 50 else "Следующий."
 
 # ================= DB =================
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
@@ -41,29 +69,19 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 def get_app(tid):
     cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
     row = cur.fetchone()
-
     if not row:
-        print(f"[ERROR] Заявка {tid} не найдена")
         return None
-
     keys = ["thread_id","user_id","message_id","name","fields","status","taken_by","logs","created_at"]
-    return dict(zip(keys, row))
-
+    return dict(zip(keys,row))
 
 async def get_thread_safe(tid):
-    # 1. пробуем из кеша
-    channel = bot.get_channel(tid)
-
-    # 2. если нет — через API
-    if not channel:
+    ch = bot.get_channel(tid)
+    if not ch:
         try:
-            channel = await bot.fetch_channel(tid)
-        except Exception as e:
-            print(f"[ERROR] fetch_channel {tid}: {e}")
+            ch = await bot.fetch_channel(tid)
+        except:
             return None
-
-    return channel
-
+    return ch
 
 def build_embed(app_data, user):
     fields = json.loads(app_data["fields"])
@@ -77,16 +95,11 @@ def build_embed(app_data, user):
     )
 
     try:
-        avatar = user.avatar.url if user.avatar else user.default_avatar.url
-        embed.set_thumbnail(url=avatar)
+        embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
     except:
         pass
 
-    embed.add_field(
-        name="👤 Пользователь",
-        value=f"<@{app_data['user_id']}> (`{app_data['user_id']}`)",
-        inline=False
-    )
+    embed.add_field(name="👤 Пользователь", value=f"<@{app_data['user_id']}>", inline=False)
 
     for f in fields:
         embed.add_field(name=f["name"], value=f["value"], inline=False)
@@ -95,153 +108,106 @@ def build_embed(app_data, user):
         embed.add_field(name="👮 Взял", value=app_data["taken_by"], inline=False)
 
     if logs:
-        embed.add_field(
-            name="📜 История",
-            value="\n".join(logs[-5:]),
-            inline=False
-        )
+        embed.add_field(name="📜 История", value="\n".join(logs[-5:]), inline=False)
 
-    embed.set_footer(text="Леночка 💌")
     return embed
 
 # ================= CREATE =================
 async def create_app(uid, name, fields):
-    try:
-        user = await bot.fetch_user(uid)
-    except:
-        print(f"[ERROR] Не удалось получить пользователя {uid}")
-        return
+    user = await bot.fetch_user(uid)
 
-    logs = [f"🟡 Создана {datetime.utcnow().strftime('%H:%M')}"]
+    logs = [f"Создана {datetime.utcnow().strftime('%H:%M')}"]
 
     forum = bot.get_channel(FORUM_CHANNEL_ID)
-    if not forum:
-        print("Форум не найден")
-        return
-
-    # создаём тред
-    data = await forum.create_thread(name=name, content="Создание заявки...")
+    data = await forum.create_thread(name=name, content="Новая заявка")
     thread = data.thread
 
     msg = await thread.send("⏳ Загрузка...")
 
-    # сохраняем
     cur.execute("""
     INSERT INTO apps VALUES(?,?,?,?,?,?,?,?,?)
     """, (
-        thread.id,
-        uid,
-        msg.id,
-        name,
+        thread.id, uid, msg.id, name,
         json.dumps(fields),
-        "Ожидает",
-        None,
+        "Ожидает", None,
         json.dumps(logs),
         datetime.utcnow().isoformat()
     ))
     conn.commit()
 
-    app_data = get_app(thread.id)
-    embed = build_embed(app_data, user)
-
-    await msg.edit(content=None, embed=embed)
+    embed = build_embed(get_app(thread.id), user)
+    await msg.edit(embed=embed, content=None)
     await thread.send(view=AppView(thread.id))
 
+    # таймер злости
+    async def timer():
+        await asyncio.sleep(1800)
+        app = get_app(thread.id)
+        if app and app["status"] == "Ожидает":
+            change_evil(10)
+            if EVIL_ENABLED:
+                await thread.send(get_phrase("idle"))
+
+    bot.loop.create_task(timer())
 
 # ================= ACTION =================
 async def handle_action(tid, action, actor):
-    app_data = get_app(tid)
-    if not app_data:
+    app = get_app(tid)
+    if not app:
         return
 
-    try:
-        user = await bot.fetch_user(app_data["user_id"])
-    except:
-        print("user fetch fail")
-        return
+    user = await bot.fetch_user(app["user_id"])
+    logs = json.loads(app["logs"])
 
-    logs = json.loads(app_data["logs"])
-
-    # ===== логика статуса =====
     if action == "take":
-        app_data["status"] = "В работе"
-        app_data["taken_by"] = actor
-        logs.append(f"👮 Взял: {actor}")
+        app["status"] = "В работе"
+        app["taken_by"] = actor
+        logs.append(f"Взял {actor}")
+        change_evil(-5)
 
     elif action == "ok":
-        app_data["status"] = "Одобрено"
-        logs.append(f"✅ Одобрил: {actor}")
+        app["status"] = "Одобрено"
+        logs.append(f"Одобрил {actor}")
+        change_evil(-10)
 
     elif action == "no":
-        app_data["status"] = "Отклонено"
-        logs.append(f"❌ Отклонил: {actor}")
+        app["status"] = "Отклонено"
+        logs.append(f"Отклонил {actor}")
+        change_evil(-10)
 
-    cur.execute("""
-    UPDATE apps SET status=?, taken_by=?, logs=? WHERE thread_id=?
-    """, (
-        app_data["status"],
-        app_data["taken_by"],
-        json.dumps(logs),
-        tid
-    ))
+    cur.execute("UPDATE apps SET status=?, taken_by=?, logs=? WHERE thread_id=?",
+                (app["status"], app["taken_by"], json.dumps(logs), tid))
     conn.commit()
 
-    # ===== ПОЛУЧЕНИЕ ТРЕДА (железобетон) =====
-    thread = None
-
-    # 1. кеш
-    channel = bot.get_channel(tid)
-
-    # 2. API
-    if not channel:
-        try:
-            channel = await bot.fetch_channel(tid)
-        except Exception as e:
-            print(f"[ERROR] fetch_channel {tid}: {e}")
-            return
-
-    # 3. проверка что это именно тред
-    if isinstance(channel, discord.Thread):
-        thread = channel
-    else:
-        print(f"[ERROR] Это не тред: {type(channel)}")
+    thread = await get_thread_safe(tid)
+    if not thread:
         return
 
-    # ===== ПОЛУЧЕНИЕ СООБЩЕНИЯ =====
     msg = None
     try:
-        msg = await thread.fetch_message(app_data["message_id"])
+        msg = await thread.fetch_message(app["message_id"])
     except:
-        try:
-            # fallback через историю
-            async for m in thread.history(limit=50):
-                if m.id == app_data["message_id"]:
-                    msg = m
-                    break
-        except Exception as e:
-            print(f"[ERROR] history fail: {e}")
-            return
+        async for m in thread.history(limit=30):
+            if m.id == app["message_id"]:
+                msg = m
+                break
 
     if not msg:
-        print(f"[ERROR] сообщение не найдено {tid}")
         return
 
-    # ===== ОБНОВЛЕНИЕ EMBED =====
-    updated = get_app(tid)
-    embed = build_embed(updated, user)
+    embed = build_embed(get_app(tid), user)
 
-    if updated["status"] == "Одобрено":
+    if app["status"] == "Одобрено":
         embed.color = COLOR_OK
-    elif updated["status"] == "Отклонено":
+    elif app["status"] == "Отклонено":
         embed.color = COLOR_NO
-    elif updated["status"] == "В работе":
+    elif app["status"] == "В работе":
         embed.color = COLOR_WORK
 
-    try:
-        await msg.edit(embed=embed)
-    except Exception as e:
-        print(f"[ERROR] edit fail: {e}")
+    await msg.edit(embed=embed)
 
+    if EVIL_ENABLED:
+        await thread.send(get_phrase(action))
 
 # ================= BUTTONS =================
 class AppView(discord.ui.View):
@@ -252,18 +218,37 @@ class AppView(discord.ui.View):
     @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
     async def take(self, i, b):
         await handle_action(self.tid, "take", i.user.mention)
-        await i.response.send_message("Взято", ephemeral=True)
+        await i.response.send_message("Ок", ephemeral=True)
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def ok(self, i, b):
         await handle_action(self.tid, "ok", i.user.mention)
-        await i.response.send_message("Одобрено", ephemeral=True)
+        await i.response.send_message("Ок", ephemeral=True)
 
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
     async def no(self, i, b):
         await handle_action(self.tid, "no", i.user.mention)
-        await i.response.send_message("Отклонено", ephemeral=True)
+        await i.response.send_message("Ок", ephemeral=True)
 
+# ================= COMMANDS =================
+@bot.command()
+async def злость(ctx, val: int=None):
+    global EVIL_LEVEL
+    if val is None:
+        await ctx.send(f"Злость: {EVIL_LEVEL}")
+    else:
+        EVIL_LEVEL = max(0,min(100,val))
+        await ctx.send(f"Установлено: {EVIL_LEVEL}")
+
+@bot.command()
+async def леночка(ctx, mode: str):
+    global EVIL_ENABLED
+    if mode == "on":
+        EVIL_ENABLED = True
+        await ctx.send("Злая Леночка включена 😈")
+    else:
+        EVIL_ENABLED = False
+        await ctx.send("Леночка добрая 💕")
 
 # ================= FLASK =================
 app = Flask(__name__)
@@ -274,7 +259,6 @@ def zayavka():
         return jsonify({"error":"bad"}),401
 
     data = request.json
-
     bot.loop.create_task(create_app(
         int(data["discordId"]),
         data.get("authorName","Без имени"),
@@ -282,7 +266,6 @@ def zayavka():
     ))
 
     return jsonify({"ok":True})
-
 
 def run():
     port = int(os.getenv("PORT", 8080))
