@@ -7,12 +7,12 @@ from flask import Flask, request, jsonify
 from openai import OpenAI
 
 # ================= CONFIG =================
-TOKEN = os.getenv("DISCORD_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 FORUM_CHANNEL_ID = 1458885875692732438   # форум заявок
-MOD_ROLE_ID = 1457319043672576008        # роль модеров (для пинга)
-CHAT_CHANNELS = [1457319047157911565]    # где Леночка общается
+MOD_ROLE_ID = 1457319043672576008        # роль модеров
+CHAT_CHANNELS = [1457319047157911565]    # каналы общения
 
 SECRET = "2122428Matros"
 
@@ -21,12 +21,21 @@ COLOR_OK = 0x2ecc71
 COLOR_NO = 0xe74c3c
 COLOR_WORK = 0xf1c40f
 
-# ================= GPT =================
-client = OpenAI(api_key=OPENAI_API_KEY)
+# ================= OPENROUTER =================
+client = OpenAI(
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1"
+)
+
+MODELS = [
+    "openrouter/auto",
+    "mistralai/mistral-7b-instruct:free"
+]
+
 GPT_ENABLED = True
+CACHE = {}
 
 # ================= EVIL =================
-EVIL_ENABLED = True
 EVIL_LEVEL = 20
 
 def change_evil(v):
@@ -68,10 +77,6 @@ rep INTEGER DEFAULT 0
 """)
 
 conn.commit()
-
-# ================= BOT =================
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ================= MEMORY =================
 def save_message(uid, role, content):
@@ -129,94 +134,52 @@ def persona(uid):
 """
 
 # ================= GPT =================
-# ================= STABLE GPT =================
-
-CACHE = {}  # простой кэш
-
-MODELS = [
-    "openrouter/auto",
-    "mistralai/mistral-7b-instruct:free",
-    "meta-llama/llama-3-8b-instruct:free"
-]
-
-def fallback_answer(text):
-    low = text.lower()
-
-    if "как вступить" in low:
-        return "Заявку подай и жди, всё уже придумано до тебя"
-    if "привет" in low:
-        return "Ну привет, что хотел"
-
+def fallback(text):
     return random.choice([
         "Ты сейчас серьёзно?",
-        "Разберись сам сначала",
-        "Заявки открой",
+        "Заявку открой",
+        "Сам подумай",
         "Не тупи"
     ])
 
 async def lena_reply(uid, text):
-    try:
-        # ===== КЭШ =====
-        key = text.lower().strip()
-        if key in CACHE:
-            return CACHE[key]
+    key = text.lower().strip()
 
-        history = load_memory(uid)
+    if key in CACHE:
+        return CACHE[key]
 
-        messages = [
-            {"role": "system", "content": persona(uid)},
-            *history,
-            {"role": "user", "content": text}
-        ]
+    messages = [
+        {"role": "system", "content": persona(uid)},
+        *load_memory(uid),
+        {"role": "user", "content": text}
+    ]
 
-        # ===== ПЕРЕБОР МОДЕЛЕЙ =====
-        for model in MODELS:
-            try:
-                r = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=120,
-                    timeout=10
-                )
-
-                ans = r.choices[0].message.content
-
-                if ans:
-                    # сохраняем
-                    save_message(uid, "user", text)
-                    save_message(uid, "assistant", ans)
-
-                    CACHE[key] = ans  # кэш
-                    return ans
-
-            except Exception as e:
-                print(f"MODEL FAIL [{model}]:", e)
-                continue
-
-        # ===== FALLBACK =====
-        return fallback_answer(text)
-
-    except Exception as e:
-        print("CRITICAL GPT ERROR:", e)
-        return fallback_answer(text)
-
-# ================= UTILS =================
-def get_app(tid):
-    cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
-    row = cur.fetchone()
-    if not row:
-        return None
-    keys = ["thread_id","user_id","message_id","name","fields","status","taken_by","logs","created_at"]
-    return dict(zip(keys,row))
-
-async def get_thread(tid):
-    ch = bot.get_channel(tid)
-    if not ch:
+    for model in MODELS:
         try:
-            ch = await bot.fetch_channel(tid)
-        except:
-            return None
-    return ch
+            r = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=120
+            )
+
+            ans = r.choices[0].message.content
+            print("GPT:", ans)
+
+            if ans and len(ans.strip()) > 3:
+                save_message(uid, "user", text)
+                save_message(uid, "assistant", ans)
+                CACHE[key] = ans
+                return ans
+
+        except Exception as e:
+            print("MODEL FAIL:", model, e)
+
+    print("FALLBACK USED")
+    return fallback(text)
+
+# ================= BOT =================
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ================= EMBED =================
 def build_embed(app, user):
@@ -227,11 +190,7 @@ def build_embed(app, user):
         timestamp=datetime.utcnow()
     )
 
-    try:
-        emb.set_thumbnail(url=user.display_avatar.url)
-    except:
-        pass
-
+    emb.set_thumbnail(url=user.display_avatar.url)
     emb.add_field(name="Пользователь", value=f"<@{app['user_id']}>", inline=False)
 
     for f in json.loads(app["fields"]):
@@ -242,8 +201,17 @@ def build_embed(app, user):
 
     return emb
 
+# ================= DB APP =================
+def get_app(tid):
+    cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    keys = ["thread_id","user_id","message_id","name","fields","status","taken_by","logs","created_at"]
+    return dict(zip(keys,row))
+
 # ================= ACTION =================
-async def handle_action(tid, action, actor, actor_id):
+async def handle_action(tid, action, actor):
     app = get_app(tid)
     if not app:
         return
@@ -253,28 +221,19 @@ async def handle_action(tid, action, actor, actor_id):
     if action == "take":
         app["status"] = "В работе"
         app["taken_by"] = actor
-        change_evil(-5)
 
     elif action == "ok":
         app["status"] = "Одобрено"
-        change_evil(-10)
 
     elif action == "no":
         app["status"] = "Отклонено"
-        change_evil(-10)
 
     cur.execute("UPDATE apps SET status=?, taken_by=? WHERE thread_id=?",
                 (app["status"], app["taken_by"], tid))
     conn.commit()
 
-    thread = await get_thread(tid)
-    if not thread:
-        return
-
-    try:
-        msg = await thread.fetch_message(app["message_id"])
-    except:
-        return
+    thread = bot.get_channel(tid)
+    msg = await thread.fetch_message(app["message_id"])
 
     emb = build_embed(get_app(tid), user)
 
@@ -287,7 +246,6 @@ async def handle_action(tid, action, actor, actor_id):
 
     await msg.edit(embed=emb)
 
-    # ЛС пользователю
     try:
         await user.send(f"Ваша заявка: {app['status']}")
     except:
@@ -301,20 +259,20 @@ class AppView(discord.ui.View):
 
     @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
     async def take(self, i, b):
-        await handle_action(self.tid, "take", i.user.mention, i.user.id)
+        await handle_action(self.tid, "take", i.user.mention)
         await i.response.send_message("Ок", ephemeral=True)
 
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
     async def ok(self, i, b):
-        await handle_action(self.tid, "ok", i.user.mention, i.user.id)
+        await handle_action(self.tid, "ok", i.user.mention)
         await i.response.send_message("Ок", ephemeral=True)
 
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
     async def no(self, i, b):
-        await handle_action(self.tid, "no", i.user.mention, i.user.id)
+        await handle_action(self.tid, "no", i.user.mention)
         await i.response.send_message("Ок", ephemeral=True)
 
-# ================= CREATE =================
+# ================= CREATE APP =================
 async def create_app(uid, name, fields):
     forum = bot.get_channel(FORUM_CHANNEL_ID)
     data = await forum.create_thread(name=name, content="Новая заявка")
@@ -332,17 +290,7 @@ async def create_app(uid, name, fields):
     await msg.edit(embed=build_embed(get_app(thread.id), user))
     await thread.send(view=AppView(thread.id))
 
-    # напоминание
-    async def timer():
-        await asyncio.sleep(1800)
-        app = get_app(thread.id)
-        if app and app["status"] == "Ожидает":
-            change_evil(10)
-            await thread.send(f"<@&{MOD_ROLE_ID}> возьмите заявку")
-
-    bot.loop.create_task(timer())
-
-# ================= GPT CHAT =================
+# ================= CHAT =================
 COOLDOWN = {}
 
 @bot.event
@@ -351,34 +299,23 @@ async def on_message(message):
         return
 
     if GPT_ENABLED and message.channel.id in CHAT_CHANNELS:
-
         now = time.time()
-        if now - COOLDOWN.get(message.author.id, 0) > 20:
 
-            if bot.user in message.mentions or random.random() < 0.15:
+        if now - COOLDOWN.get(message.author.id, 0) > 15:
+            if bot.user in message.mentions or random.random() < 0.2:
                 COOLDOWN[message.author.id] = now
 
                 reply = await lena_reply(message.author.id, message.content)
-                if reply:
-                    await message.reply(reply)
+                await message.reply(reply)
 
     await bot.process_commands(message)
 
-# ================= SLASH =================
+# ================= COMMANDS =================
 @bot.tree.command(name="гпт")
-async def gpt_toggle(interaction: discord.Interaction, mode: str):
+async def gpt_cmd(interaction: discord.Interaction, mode: str):
     global GPT_ENABLED
     GPT_ENABLED = (mode == "on")
-    await interaction.response.send_message(f"GPT: {mode}", ephemeral=True)
-
-@bot.tree.command(name="злость")
-async def evil_cmd(interaction: discord.Interaction, val: int=None):
-    global EVIL_LEVEL
-    if val is None:
-        await interaction.response.send_message(f"{EVIL_LEVEL}", ephemeral=True)
-    else:
-        EVIL_LEVEL = val
-        await interaction.response.send_message("Ок", ephemeral=True)
+    await interaction.response.send_message("OK", ephemeral=True)
 
 # ================= READY =================
 @bot.event
@@ -408,4 +345,4 @@ def run():
 
 threading.Thread(target=run).start()
 
-bot.run(TOKEN)
+bot.run(DISCORD_TOKEN)
