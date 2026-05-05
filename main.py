@@ -1,9 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import os, asyncio, sqlite3, json, threading, random, time
-from datetime import datetime
-from flask import Flask, request, jsonify
+from datetime import datetime, timedelta
+from flask import Flask, request
 from openai import OpenAI
 
 # ================= CONFIG =================
@@ -15,14 +15,15 @@ MOD_ROLE_ID = 1457319043672576008
 CHAT_CHANNELS = [1457319047157911565]
 SECRET = "2122428Matros"
 
+
 BOSS_IDS = {
     924956705756971028,
     695943956856307744,
     550051551700451369
 }
 
-OVERDUE_MINUTES = 10
-REMIND_MINUTES = 5
+OVERDUE_MIN = 15
+REMIND_MIN = 7
 
 # ================= OPENROUTER =================
 client = OpenAI(
@@ -30,11 +31,7 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
-MODELS = [
-    "x-ai/grok-3-mini-beta",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free"
-]
+MODEL = "x-ai/grok-3-mini-beta"
 
 # ================= DB =================
 conn = sqlite3.connect("db.sqlite3", check_same_thread=False)
@@ -48,14 +45,13 @@ name TEXT,
 fields TEXT,
 status TEXT,
 taken_by TEXT,
-created_at TEXT
+created_at TEXT,
+last_update TEXT
 )""")
 
-cur.execute("""CREATE TABLE IF NOT EXISTS user_memory(
-user_id INTEGER,
-role TEXT,
-content TEXT,
-ts TEXT
+cur.execute("""CREATE TABLE IF NOT EXISTS reputation(
+user_id INTEGER PRIMARY KEY,
+score INTEGER DEFAULT 0
 )""")
 
 cur.execute("""CREATE TABLE IF NOT EXISTS mod_stats(
@@ -65,35 +61,11 @@ approved INTEGER DEFAULT 0,
 rejected INTEGER DEFAULT 0
 )""")
 
-cur.execute("""CREATE TABLE IF NOT EXISTS reputation(
-user_id INTEGER PRIMARY KEY,
-score INTEGER DEFAULT 0
-)""")
-
 conn.commit()
 
 # ================= HELPERS =================
 def is_boss(uid):
     return uid in BOSS_IDS
-
-def update_mod_stats(user, action):
-    cur.execute("""
-    INSERT INTO mod_stats(user,taken,approved,rejected)
-    VALUES(?,?,?,?)
-    ON CONFLICT(user) DO UPDATE SET
-    taken=taken+?,
-    approved=approved+?,
-    rejected=rejected+?
-    """,(
-        user,
-        1 if action=="take" else 0,
-        1 if action=="ok" else 0,
-        1 if action=="no" else 0,
-        1 if action=="take" else 0,
-        1 if action=="ok" else 0,
-        1 if action=="no" else 0
-    ))
-    conn.commit()
 
 def update_reputation(uid, delta):
     cur.execute("""
@@ -103,20 +75,31 @@ def update_reputation(uid, delta):
     """,(uid,delta,delta))
     conn.commit()
 
-def get_reputation(uid):
-    cur.execute("SELECT score FROM reputation WHERE user_id=?", (uid,))
-    r = cur.fetchone()
-    return r[0] if r else 0
+def update_mod(user, action):
+    cur.execute("""
+    INSERT INTO mod_stats(user,taken,approved,rejected)
+    VALUES(?,?,?,?)
+    ON CONFLICT(user) DO UPDATE SET
+    taken=taken+?,
+    approved=approved+?,
+    rejected=rejected+?
+    """,(user,
+         1 if action=="take" else 0,
+         1 if action=="ok" else 0,
+         1 if action=="no" else 0,
+         1 if action=="take" else 0,
+         1 if action=="ok" else 0,
+         1 if action=="no" else 0))
+    conn.commit()
 
 # ================= MOOD =================
-LENA_MOOD = {"state":"calm","last_update":0}
+LENA_MOOD = {"state":"calm","last":0}
 
 def update_mood():
-    now = time.time()
-    if now - LENA_MOOD["last_update"] < 30:
+    if time.time() - LENA_MOOD["last"] < 30:
         return LENA_MOOD["state"]
 
-    LENA_MOOD["last_update"] = now
+    LENA_MOOD["last"] = time.time()
 
     cur.execute("SELECT COUNT(*) FROM apps WHERE status='Ожидает'")
     pending = cur.fetchone()[0]
@@ -130,102 +113,87 @@ def update_mood():
 
     return LENA_MOOD["state"]
 
-# ================= PERSONA =================
-def persona(uid=None):
-    if uid and is_boss(uid):
-        return "Ты Леночка. Перед тобой начальство. Отвечай уважительно, коротко, по делу. Только русский."
-
-    mood = update_mood()
-
-    if mood == "angry":
-        return "Ты злая админша. Коротко, резко. Русский язык."
-    elif mood == "tired":
-        return "Ты уставшая админша. Коротко, спокойно."
-    else:
-        return "Ты спокойная админша. Отвечай нормально."
-
-# ================= MEMORY =================
-def save_message(uid, role, content):
-    cur.execute("INSERT INTO user_memory VALUES(?,?,?,?)",
-                (uid, role, content, datetime.utcnow().isoformat()))
-    conn.commit()
-
-def load_memory(uid):
-    cur.execute("SELECT role,content FROM user_memory WHERE user_id=? ORDER BY ts DESC LIMIT 6",(uid,))
-    rows = cur.fetchall()
-    rows.reverse()
-    return [{"role":r[0],"content":r[1]} for r in rows]
-
-# ================= FILTERS =================
-def is_english(text):
-    return any(c in text.lower() for c in "abcdefghijklmnopqrstuvwxyz")
-
-def is_stupid(text):
-    t = text.strip().lower()
-    if len(t) <= 3: return True
-    if len(t.split()) == 1: return True
-    if t.count("?") >= 3: return True
-    return False
-
-def get_stupid_reply():
-    mood = update_mood()
-    if mood == "angry":
-        return random.choice(["Ты серьёзно?","Соберись","Я не буду это разбирать"])
-    elif mood == "tired":
-        return random.choice(["Можно конкретнее...","Не понимаю","Перефразируй"])
-    else:
-        return random.choice(["Уточни","Что именно?","Чуть подробнее"])
-
 # ================= GPT =================
+def persona(uid):
+    if is_boss(uid):
+        return "Ты Леночка. Перед тобой начальство. Отвечай уважительно и чётко."
+
+    mood = update_mood()
+    if mood == "angry":
+        return "Ты злая админша. Коротко и резко."
+    elif mood == "tired":
+        return "Ты уставшая админша. Коротко."
+    return "Ты спокойная админша."
+
 async def lena_reply(uid, text):
-    messages = [
-        {"role":"system","content":persona(uid)},
-        *load_memory(uid),
-        {"role":"user","content":text}
-    ]
-
-    for model in MODELS:
-        try:
-            r = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=120
-            )
-
-            ans = r.choices[0].message.content
-            if not ans: continue
-            if is_english(ans): continue
-
-            save_message(uid,"user",text)
-            save_message(uid,"assistant",ans)
-            return ans
-
-        except Exception as e:
-            print("GPT FAIL:", e)
-
-    return "Нормально сформулируй вопрос"
-
-# ================= AI ЗАЯВКИ =================
-async def ai_review(name, fields):
-    text = "\n".join([f"{f['name']}: {f['value']}" for f in fields])
-
     try:
         r = client.chat.completions.create(
-            model="x-ai/grok-3-mini-beta",
+            model=MODEL,
             messages=[
-                {"role":"system","content":"Ответ JSON {\"decision\":\"ok|no|review\",\"reason\":\"...\"}"},
+                {"role":"system","content":persona(uid)},
                 {"role":"user","content":text}
             ],
             max_tokens=120
         )
-
-        data = json.loads(r.choices[0].message.content)
-        d = data.get("decision","review")
-        if d not in ["ok","no","review"]: d="review"
-        return d, data.get("reason","-")
-
+        return r.choices[0].message.content
     except:
-        return "review","ошибка"
+        return "Сформулируй нормально"
+
+# ================= AI HR =================
+async def ai_review(name, fields):
+    text = "\n".join([f"{f['name']}: {f['value']}" for f in fields])
+
+    prompt = """
+Ответь JSON:
+{"decision":"ok|no|review","reason":"...","score":0-3}
+"""
+
+    try:
+        r = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role":"system","content":prompt},
+                      {"role":"user","content":text}]
+        )
+        data = json.loads(r.choices[0].message.content)
+        return data.get("decision","review"), data.get("reason","-"), data.get("score",1)
+    except:
+        return "review","ошибка",1
+
+def hr_message(decision, name=None, reason="", score=1):
+    n = f"{name}," if name else ""
+
+    if score >= 2 and decision == "ok":
+        return f"""{n}
+✨ Отличные новости!
+
+Мы внимательно рассмотрели твою заявку и готовы принять тебя.
+
+Сильный уровень 💼  
+Добро пожаловать 🤍
+"""
+
+    if decision == "ok":
+        return f"""{n}
+✨ Твоя заявка одобрена 🎉
+Добро пожаловать 🤍
+"""
+
+    if decision == "no":
+        return f"""{n}
+Спасибо за заявку 💙
+
+К сожалению, сейчас отказ.
+
+📌 Причина:
+{reason}
+
+Попробуй позже 🙏
+"""
+
+    return f"""{n}
+Заявка принята 👀
+Скоро ответим 💬
+"""
 
 # ================= EMBED =================
 def build_embed(app, user):
@@ -234,6 +202,11 @@ def build_embed(app, user):
         description=f"Статус: {app['status']}",
         timestamp=datetime.utcnow()
     )
+
+    if app["status"]=="Одобрено": emb.color=0x2ecc71
+    elif app["status"]=="Отклонено": emb.color=0xe74c3c
+    elif app["status"]=="В работе": emb.color=0xf1c40f
+
     emb.set_thumbnail(url=user.display_avatar.url)
 
     for f in json.loads(app["fields"]):
@@ -244,7 +217,7 @@ def build_embed(app, user):
 
     return emb
 
-def extract_user_name(app):
+def extract_name(app):
     try:
         for f in json.loads(app["fields"]):
             if "имя" in f["name"].lower():
@@ -253,23 +226,15 @@ def extract_user_name(app):
         pass
     return None
 
-def get_dm_message(status, name=None):
-    prefix = f"{name}, " if name else ""
-    msgs = {
-        "Одобрено":[f"{prefix}поздравляю! Тебя приняли 🎉"],
-        "Отклонено":[f"{prefix}спасибо за заявку 💙"],
-        "В работе":[f"{prefix}заявка рассматривается 👀"]
-    }
-    return random.choice(msgs.get(status,["Статус обновлён"]))
-
-# ================= ACTION =================
+# ================= DB ACCESS =================
 def get_app(tid):
     cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
-    row = cur.fetchone()
-    if not row: return None
-    keys=["thread_id","user_id","message_id","name","fields","status","taken_by","created_at"]
-    return dict(zip(keys,row))
+    r = cur.fetchone()
+    if not r: return None
+    keys=["thread_id","user_id","message_id","name","fields","status","taken_by","created_at","last_update"]
+    return dict(zip(keys,r))
 
+# ================= ACTION =================
 async def handle_action(tid, action, actor):
     app = get_app(tid)
     if not app: return
@@ -286,10 +251,12 @@ async def handle_action(tid, action, actor):
     else:
         return
 
-    update_mod_stats(actor, action)
+    update_mod(actor, action)
 
-    cur.execute("UPDATE apps SET status=?,taken_by=? WHERE thread_id=?",
-                (status,taken,tid))
+    cur.execute("""
+    UPDATE apps SET status=?, taken_by=?, last_update=?
+    WHERE thread_id=?
+    """,(status,taken,datetime.utcnow().isoformat(),tid))
     conn.commit()
 
     app = get_app(tid)
@@ -298,19 +265,7 @@ async def handle_action(tid, action, actor):
     msg = await thread.fetch_message(app["message_id"])
     user = await bot.fetch_user(app["user_id"])
 
-    emb = build_embed(app, user)
-
-    if status=="Одобрено": emb.color=0x2ecc71
-    elif status=="Отклонено": emb.color=0xe74c3c
-    elif status=="В работе": emb.color=0xf1c40f
-
-    await msg.edit(embed=emb)
-
-    try:
-        name = extract_user_name(app)
-        await user.send(get_dm_message(status, name))
-    except:
-        pass
+    await msg.edit(embed=build_embed(app, user))
 
 # ================= BUTTONS =================
 class AppView(discord.ui.View):
@@ -321,17 +276,17 @@ class AppView(discord.ui.View):
     @discord.ui.button(label="👮 Взять",style=discord.ButtonStyle.primary)
     async def take(self,i,b):
         await handle_action(self.tid,"take",i.user.mention)
-        await i.response.send_message("OK",ephemeral=True)
+        await i.response.send_message("Взято",ephemeral=True)
 
     @discord.ui.button(label="✅ Одобрить",style=discord.ButtonStyle.success)
     async def ok(self,i,b):
         await handle_action(self.tid,"ok",i.user.mention)
-        await i.response.send_message("OK",ephemeral=True)
+        await i.response.send_message("Ок",ephemeral=True)
 
     @discord.ui.button(label="❌ Отклонить",style=discord.ButtonStyle.danger)
     async def no(self,i,b):
         await handle_action(self.tid,"no",i.user.mention)
-        await i.response.send_message("OK",ephemeral=True)
+        await i.response.send_message("Отклонено",ephemeral=True)
 
 # ================= CREATE =================
 async def create_app(uid,name,fields):
@@ -341,57 +296,86 @@ async def create_app(uid,name,fields):
 
     msg = await thread.send("⏳")
 
-    cur.execute("INSERT INTO apps VALUES(?,?,?,?,?,?,?,?)",
-        (thread.id,uid,msg.id,name,json.dumps(fields),"Ожидает",None,datetime.utcnow().isoformat()))
+    now = datetime.utcnow().isoformat()
+
+    cur.execute("INSERT INTO apps VALUES(?,?,?,?,?,?,?,?,?)",
+        (thread.id,uid,msg.id,name,json.dumps(fields),"Ожидает",None,now,now))
     conn.commit()
 
     user = await bot.fetch_user(uid)
     await msg.edit(embed=build_embed(get_app(thread.id),user))
     await thread.send(view=AppView(thread.id))
 
-    decision,reason = await ai_review(name,fields)
-    await thread.send(f"🤖 AI: {decision}\n{reason}")
+    # AI -> ЛС
+    decision,reason,score = await ai_review(name,fields)
 
-    if decision=="ok":
-        await handle_action(thread.id,"ok","AI")
-    elif decision=="no":
-        await handle_action(thread.id,"no","AI")
+    try:
+        nm = extract_name(get_app(thread.id))
+        await user.send(hr_message(decision,nm,reason,score))
+    except:
+        pass
+
+# ================= OVERDUE =================
+@tasks.loop(minutes=2)
+async def check_overdue():
+    cur.execute("SELECT thread_id, created_at, status FROM apps")
+    rows = cur.fetchall()
+
+    for tid, created, status in rows:
+        if status != "Ожидает":
+            continue
+
+        created_dt = datetime.fromisoformat(created)
+        diff = (datetime.utcnow() - created_dt).total_seconds() / 60
+
+        if diff > OVERDUE_MIN:
+            thread = bot.get_channel(tid) or await bot.fetch_channel(tid)
+            await thread.send(random.choice([
+                "🚨 Заявка горит",
+                "🚨 Вы где вообще?",
+                "🚨 Работать будем?"
+            ]))
+
+        elif diff > REMIND_MIN:
+            thread = bot.get_channel(tid) or await bot.fetch_channel(tid)
+            await thread.send("⏳ Напоминание: заявка ждёт")
 
 # ================= BOT =================
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
+async def on_ready():
+    print("READY")
+    check_overdue.start()
+
+@bot.event
 async def on_message(message):
     if message.author.bot: return
 
-    uid = message.author.id
-
     if message.channel.id in CHAT_CHANNELS:
+        uid = message.author.id
+
         if is_boss(uid):
-            reply = await lena_reply(uid, message.content)
+            reply = await lena_reply(uid,message.content)
         else:
-            if is_stupid(message.content) and random.random()<0.5:
-                reply = get_stupid_reply()
-                update_reputation(uid, -1)
+            if len(message.content) < 4:
+                reply = "Нормально напиши"
+                update_reputation(uid,-1)
             else:
-                reply = await lena_reply(uid, message.content)
-                update_reputation(uid, +1)
+                reply = await lena_reply(uid,message.content)
+                update_reputation(uid,1)
 
         await message.reply(reply)
 
     await bot.process_commands(message)
 
-# ================= COMMANDS =================
+# ================= COMMAND =================
 @bot.tree.command(name="рейтинг")
 async def rating(i:discord.Interaction):
     cur.execute("SELECT user_id,score FROM reputation ORDER BY score DESC LIMIT 10")
     rows = cur.fetchall()
-
-    text = ""
-    for uid,score in rows:
-        text += f"<@{uid}> — {score}\n"
-
+    text="\n".join([f"<@{u}> — {s}" for u,s in rows])
     await i.response.send_message(text or "Пусто")
 
 # ================= WEB =================
@@ -414,7 +398,7 @@ def zayavka():
     return {"ok":True}
 
 def run():
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT",8080)))
 
 threading.Thread(target=run).start()
 
