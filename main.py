@@ -13,16 +13,16 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 FORUM_CHANNEL_ID = 1458885875692732438
 MOD_ROLE_ID = 1457319043672576008
 CHAT_CHANNELS = [1457319047157911565]
-
 SECRET = "2122428Matros"
+
+BOSS_IDS = {
+    924956705756971028,
+    695943956856307744,
+    550051551700451369
+}
 
 OVERDUE_MINUTES = 10
 REMIND_MINUTES = 5
-
-COLOR_WAIT = 0x85144b
-COLOR_OK = 0x2ecc71
-COLOR_NO = 0xe74c3c
-COLOR_WORK = 0xf1c40f
 
 # ================= OPENROUTER =================
 client = OpenAI(
@@ -65,7 +65,84 @@ approved INTEGER DEFAULT 0,
 rejected INTEGER DEFAULT 0
 )""")
 
+cur.execute("""CREATE TABLE IF NOT EXISTS reputation(
+user_id INTEGER PRIMARY KEY,
+score INTEGER DEFAULT 0
+)""")
+
 conn.commit()
+
+# ================= HELPERS =================
+def is_boss(uid):
+    return uid in BOSS_IDS
+
+def update_mod_stats(user, action):
+    cur.execute("""
+    INSERT INTO mod_stats(user,taken,approved,rejected)
+    VALUES(?,?,?,?)
+    ON CONFLICT(user) DO UPDATE SET
+    taken=taken+?,
+    approved=approved+?,
+    rejected=rejected+?
+    """,(
+        user,
+        1 if action=="take" else 0,
+        1 if action=="ok" else 0,
+        1 if action=="no" else 0,
+        1 if action=="take" else 0,
+        1 if action=="ok" else 0,
+        1 if action=="no" else 0
+    ))
+    conn.commit()
+
+def update_reputation(uid, delta):
+    cur.execute("""
+    INSERT INTO reputation(user_id,score)
+    VALUES(?,?)
+    ON CONFLICT(user_id) DO UPDATE SET score=score+?
+    """,(uid,delta,delta))
+    conn.commit()
+
+def get_reputation(uid):
+    cur.execute("SELECT score FROM reputation WHERE user_id=?", (uid,))
+    r = cur.fetchone()
+    return r[0] if r else 0
+
+# ================= MOOD =================
+LENA_MOOD = {"state":"calm","last_update":0}
+
+def update_mood():
+    now = time.time()
+    if now - LENA_MOOD["last_update"] < 30:
+        return LENA_MOOD["state"]
+
+    LENA_MOOD["last_update"] = now
+
+    cur.execute("SELECT COUNT(*) FROM apps WHERE status='Ожидает'")
+    pending = cur.fetchone()[0]
+
+    if pending >= 5:
+        LENA_MOOD["state"] = "angry"
+    elif pending >= 2:
+        LENA_MOOD["state"] = "tired"
+    else:
+        LENA_MOOD["state"] = "calm"
+
+    return LENA_MOOD["state"]
+
+# ================= PERSONA =================
+def persona(uid=None):
+    if uid and is_boss(uid):
+        return "Ты Леночка. Перед тобой начальство. Отвечай уважительно, коротко, по делу. Только русский."
+
+    mood = update_mood()
+
+    if mood == "angry":
+        return "Ты злая админша. Коротко, резко. Русский язык."
+    elif mood == "tired":
+        return "Ты уставшая админша. Коротко, спокойно."
+    else:
+        return "Ты спокойная админша. Отвечай нормально."
 
 # ================= MEMORY =================
 def save_message(uid, role, content):
@@ -74,41 +151,14 @@ def save_message(uid, role, content):
     conn.commit()
 
 def load_memory(uid):
-    cur.execute("SELECT role, content FROM user_memory WHERE user_id=? ORDER BY ts DESC LIMIT 6",(uid,))
+    cur.execute("SELECT role,content FROM user_memory WHERE user_id=? ORDER BY ts DESC LIMIT 6",(uid,))
     rows = cur.fetchall()
     rows.reverse()
     return [{"role":r[0],"content":r[1]} for r in rows]
 
-# ================= PERSONA =================
-def persona():
-    return """
-Ты Леночка, администратор Discord.
-
-Правила:
-- только русский язык
-- коротко и по делу
-- можешь быть резкой
-- не пиши как ИИ
-"""
-
-# ================= ФИЛЬТРЫ =================
+# ================= FILTERS =================
 def is_english(text):
     return any(c in text.lower() for c in "abcdefghijklmnopqrstuvwxyz")
-
-BAD_PHRASES = ["i am an ai","as an ai","i cannot","i'm sorry"]
-
-def is_bad(text):
-    t = text.lower()
-    return any(x in t for x in BAD_PHRASES)
-
-# ================= ТУПЫЕ ВОПРОСЫ =================
-STUPID_REPLIES = [
-    "Ты нормально сформулировать можешь?",
-    "Я не телепат",
-    "Конкретнее давай",
-    "Это вопрос вообще?",
-    "Соберись и напиши нормально"
-]
 
 def is_stupid(text):
     t = text.strip().lower()
@@ -117,10 +167,19 @@ def is_stupid(text):
     if t.count("?") >= 3: return True
     return False
 
+def get_stupid_reply():
+    mood = update_mood()
+    if mood == "angry":
+        return random.choice(["Ты серьёзно?","Соберись","Я не буду это разбирать"])
+    elif mood == "tired":
+        return random.choice(["Можно конкретнее...","Не понимаю","Перефразируй"])
+    else:
+        return random.choice(["Уточни","Что именно?","Чуть подробнее"])
+
 # ================= GPT =================
 async def lena_reply(uid, text):
     messages = [
-        {"role":"system","content":persona()},
+        {"role":"system","content":persona(uid)},
         *load_memory(uid),
         {"role":"user","content":text}
     ]
@@ -134,10 +193,8 @@ async def lena_reply(uid, text):
             )
 
             ans = r.choices[0].message.content
-
             if not ans: continue
             if is_english(ans): continue
-            if is_bad(ans): continue
 
             save_message(uid,"user",text)
             save_message(uid,"assistant",ans)
@@ -146,7 +203,7 @@ async def lena_reply(uid, text):
         except Exception as e:
             print("GPT FAIL:", e)
 
-    return "Нормально напиши вопрос"
+    return "Нормально сформулируй вопрос"
 
 # ================= AI ЗАЯВКИ =================
 async def ai_review(name, fields):
@@ -156,7 +213,7 @@ async def ai_review(name, fields):
         r = client.chat.completions.create(
             model="x-ai/grok-3-mini-beta",
             messages=[
-                {"role":"system","content":"Ответ JSON: {\"decision\":\"ok|no|review\",\"reason\":\"...\"}"},
+                {"role":"system","content":"Ответ JSON {\"decision\":\"ok|no|review\",\"reason\":\"...\"}"},
                 {"role":"user","content":text}
             ],
             max_tokens=120
@@ -187,6 +244,24 @@ def build_embed(app, user):
 
     return emb
 
+def extract_user_name(app):
+    try:
+        for f in json.loads(app["fields"]):
+            if "имя" in f["name"].lower():
+                return f["value"]
+    except:
+        pass
+    return None
+
+def get_dm_message(status, name=None):
+    prefix = f"{name}, " if name else ""
+    msgs = {
+        "Одобрено":[f"{prefix}поздравляю! Тебя приняли 🎉"],
+        "Отклонено":[f"{prefix}спасибо за заявку 💙"],
+        "В работе":[f"{prefix}заявка рассматривается 👀"]
+    }
+    return random.choice(msgs.get(status,["Статус обновлён"]))
+
 # ================= ACTION =================
 def get_app(tid):
     cur.execute("SELECT * FROM apps WHERE thread_id=?", (tid,))
@@ -200,52 +275,66 @@ async def handle_action(tid, action, actor):
     if not app: return
 
     if action=="take":
-        app["status"]="В работе"
-        app["taken_by"]=actor
+        status="В работе"
+        taken=actor
     elif action=="ok":
-        app["status"]="Одобрено"
+        status="Одобрено"
+        taken=app["taken_by"]
     elif action=="no":
-        app["status"]="Отклонено"
+        status="Отклонено"
+        taken=app["taken_by"]
+    else:
+        return
+
+    update_mod_stats(actor, action)
 
     cur.execute("UPDATE apps SET status=?,taken_by=? WHERE thread_id=?",
-                (app["status"],app["taken_by"],tid))
+                (status,taken,tid))
     conn.commit()
 
-    thread = bot.get_channel(tid)
-    if not thread: return
+    app = get_app(tid)
 
+    thread = bot.get_channel(tid) or await bot.fetch_channel(tid)
     msg = await thread.fetch_message(app["message_id"])
     user = await bot.fetch_user(app["user_id"])
 
-    await msg.edit(embed=build_embed(get_app(tid), user))
+    emb = build_embed(app, user)
+
+    if status=="Одобрено": emb.color=0x2ecc71
+    elif status=="Отклонено": emb.color=0xe74c3c
+    elif status=="В работе": emb.color=0xf1c40f
+
+    await msg.edit(embed=emb)
 
     try:
-        await user.send(f"Заявка: {app['status']}")
-    except: pass
+        name = extract_user_name(app)
+        await user.send(get_dm_message(status, name))
+    except:
+        pass
 
 # ================= BUTTONS =================
 class AppView(discord.ui.View):
-    def __init__(self, tid):
+    def __init__(self,tid):
         super().__init__(timeout=None)
-        self.tid = tid
+        self.tid=tid
 
-    @discord.ui.button(label="👮 Взять", style=discord.ButtonStyle.primary)
-    async def take(self, i, b):
-        await handle_action(self.tid, "take", i.user.mention)
-        await i.response.send_message("OK", ephemeral=True)
+    @discord.ui.button(label="👮 Взять",style=discord.ButtonStyle.primary)
+    async def take(self,i,b):
+        await handle_action(self.tid,"take",i.user.mention)
+        await i.response.send_message("OK",ephemeral=True)
 
-    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.success)
-    async def ok(self, i, b):
-        await handle_action(self.tid, "ok", i.user.mention)
-        await i.response.send_message("OK", ephemeral=True)
+    @discord.ui.button(label="✅ Одобрить",style=discord.ButtonStyle.success)
+    async def ok(self,i,b):
+        await handle_action(self.tid,"ok",i.user.mention)
+        await i.response.send_message("OK",ephemeral=True)
 
-    @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger)
-    async def no(self, i, b):
-        await handle_action(self.tid, "no", i.user.mention)
-        await i.response.send_message("OK", ephemeral=True)
+    @discord.ui.button(label="❌ Отклонить",style=discord.ButtonStyle.danger)
+    async def no(self,i,b):
+        await handle_action(self.tid,"no",i.user.mention)
+        await i.response.send_message("OK",ephemeral=True)
 
 # ================= CREATE =================
-async def create_app(uid, name, fields):
+async def create_app(uid,name,fields):
     forum = bot.get_channel(FORUM_CHANNEL_ID)
     data = await forum.create_thread(name=name, content="Новая заявка")
     thread = data.thread
@@ -253,20 +342,20 @@ async def create_app(uid, name, fields):
     msg = await thread.send("⏳")
 
     cur.execute("INSERT INTO apps VALUES(?,?,?,?,?,?,?,?)",
-        (thread.id, uid, msg.id, name, json.dumps(fields), "Ожидает", None, datetime.utcnow().isoformat()))
+        (thread.id,uid,msg.id,name,json.dumps(fields),"Ожидает",None,datetime.utcnow().isoformat()))
     conn.commit()
 
     user = await bot.fetch_user(uid)
-    await msg.edit(embed=build_embed(get_app(thread.id), user))
+    await msg.edit(embed=build_embed(get_app(thread.id),user))
     await thread.send(view=AppView(thread.id))
 
-    decision, reason = await ai_review(name, fields)
+    decision,reason = await ai_review(name,fields)
     await thread.send(f"🤖 AI: {decision}\n{reason}")
 
     if decision=="ok":
-        await handle_action(thread.id, "ok", "AI")
+        await handle_action(thread.id,"ok","AI")
     elif decision=="no":
-        await handle_action(thread.id, "no", "AI")
+        await handle_action(thread.id,"no","AI")
 
 # ================= BOT =================
 intents = discord.Intents.all()
@@ -276,15 +365,34 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_message(message):
     if message.author.bot: return
 
+    uid = message.author.id
+
     if message.channel.id in CHAT_CHANNELS:
-        if is_stupid(message.content):
-            reply = random.choice(STUPID_REPLIES)
+        if is_boss(uid):
+            reply = await lena_reply(uid, message.content)
         else:
-            reply = await lena_reply(message.author.id, message.content)
+            if is_stupid(message.content) and random.random()<0.5:
+                reply = get_stupid_reply()
+                update_reputation(uid, -1)
+            else:
+                reply = await lena_reply(uid, message.content)
+                update_reputation(uid, +1)
 
         await message.reply(reply)
 
     await bot.process_commands(message)
+
+# ================= COMMANDS =================
+@bot.tree.command(name="рейтинг")
+async def rating(i:discord.Interaction):
+    cur.execute("SELECT user_id,score FROM reputation ORDER BY score DESC LIMIT 10")
+    rows = cur.fetchall()
+
+    text = ""
+    for uid,score in rows:
+        text += f"<@{uid}> — {score}\n"
+
+    await i.response.send_message(text or "Пусто")
 
 # ================= WEB =================
 app = Flask(__name__)
